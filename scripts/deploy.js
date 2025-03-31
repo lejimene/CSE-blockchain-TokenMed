@@ -1,14 +1,20 @@
+// scripts/deploy.js
 const hre = require("hardhat");
 
 async function main() {
-  const [owner] = await hre.ethers.getSigners();
+  const UserAccessRegistry = await hre.ethers.getContractFactory("UserAccessRegistry");
+  const contract = await UserAccessRegistry.deploy();
 
-  const EHRNFT = await hre.ethers.getContractFactory("EHRNFT");
-  const ehrNFT = await EHRNFT.deploy(owner.address);
-
-  await ehrNFT.waitForDeployment(); // Wait for the deployment to complete
-
-  console.log("EHRNFT deployed to:", await ehrNFT.getAddress());
+  await contract.waitForDeployment();
+  
+  console.log(`
+    Contract deployed to: ${contract.target}
+    
+    To verify in console:
+    npx hardhat console --network localhost
+    > const contract = await ethers.getContractAt("UserAccessRegistry", "${contract.target}")
+    > await contract.getUserRole("YOUR_TEST_ADDRESS")
+  `);
 }
 
 main().catch((error) => {
