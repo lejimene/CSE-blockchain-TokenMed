@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { contractAddress, contractABI } from "../contracts/UserAccessRegistry";
+import { userRegistryConfig} from "../contracts/contracts-config";
 import { useNavigate } from "react-router-dom";
+import "../styles/pages/Signup&Signin.css";
 
 const Dashboard = () => {
     const [account, setAccount] = useState(null);
@@ -11,6 +12,9 @@ const Dashboard = () => {
     const [showDoctorPassword, setShowDoctorPassword] = useState(false);
     const [doctorPassword, setDoctorPassword] = useState("");
     const navigate = useNavigate();
+    const userRegistryAddress = userRegistryConfig.address 
+    const userRegistryABI = userRegistryConfig.abi 
+
 
     // Check registration status when account changes
     useEffect(() => {
@@ -18,13 +22,11 @@ const Dashboard = () => {
             setIsLoading(true);
             try {
                 const provider = new ethers.BrowserProvider(window.ethereum);
-                const contract = new ethers.Contract(contractAddress, contractABI, provider);
+                const contract = new ethers.Contract(userRegistryAddress, userRegistryABI , provider);
                 
-                // Get the user role from the contract using getUserRole
                 const role = await contract.getUserRole(account);
-                console.log('User Role:', role.toString()); // Convert the BigNumber to string for logging
+                console.log('User Role:', role.toString());
         
-                // Convert role to a regular number for comparison
                 const roleNumber = role.toNumber ? role.toNumber() : parseInt(role.toString(), 10);
         
                 if (roleNumber === 1) {
@@ -36,13 +38,15 @@ const Dashboard = () => {
                 }
             } catch (error) {
                 console.error("Registration check failed:", error);
-                setError("Connect with MetaMask to Cotinue");
+                setError("Connect with MetaMask to Continue");
             } finally {
                 setIsLoading(false);
             }
         };
 
-        checkRegistration();
+        if (account) {
+            checkRegistration();
+        }
     }, [account]);
 
     // Redirect user based on role
@@ -79,13 +83,12 @@ const Dashboard = () => {
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(contractAddress, contractABI, signer);
+            const contract = new ethers.Contract(userRegistryAddress, userRegistryABI , signer);
     
-            // Call registerUser with role = 1 (Patient) and empty string as password
             await contract.registerUser(1, "");
     
-            setUserRole(1); // Update state to reflect patient role
-            navigate("/patient"); // Redirect to patient page
+            setUserRole(1);
+            navigate("/patient");
         } catch (error) {
             setError("Patient registration failed: " + error.message);
         } finally {
@@ -98,13 +101,12 @@ const Dashboard = () => {
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(contractAddress, contractABI, signer);
+            const contract = new ethers.Contract(userRegistryAddress, userRegistryABI , signer);
     
-            // Call registerUser with role = 2 (Doctor) and the password
             await contract.registerUser(2, doctorPassword);
     
-            setUserRole(2); // Update state to reflect doctor role
-            navigate("/doctor"); // Redirect to doctor page
+            setUserRole(2);
+            navigate("/doctor");
         } catch (error) {
             setError("Doctor registration failed. Ensure password is 'med123'.");
         } finally {
@@ -177,64 +179,6 @@ const Dashboard = () => {
             ) : (
                 <p>Redirecting to your dashboard...</p>
             )}
-            
-            <style jsx>{`
-                .dashboard-container {
-                    max-width: 600px;
-                    margin: 2rem auto;
-                    padding: 2rem;
-                    text-align: center;
-                }
-                .error {
-                    color: red;
-                    margin: 1rem 0;
-                }
-                .connect-btn {
-                    background: #f5841f;
-                    color: white;
-                    padding: 0.75rem 1.5rem;
-                    border: none;
-                    border-radius: 4px;
-                    font-size: 1rem;
-                    cursor: pointer;
-                }
-                .registration-options {
-                    margin-top: 2rem;
-                }
-                .role-buttons {
-                    display: flex;
-                    gap: 1rem;
-                    justify-content: center;
-                    margin: 1.5rem 0;
-                }
-                .patient-btn {
-                    background: #4CAF50;
-                    color: white;
-                    padding: 0.75rem 1.5rem;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                }
-                .doctor-btn {
-                    background: #2196F3;
-                    color: white;
-                    padding: 0.75rem 1.5rem;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                }
-                .doctor-form {
-                    margin-top: 1rem;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.5rem;
-                    align-items: center;
-                }
-                .doctor-form input {
-                    padding: 0.5rem;
-                    width: 200px;
-                }
-            `}</style>
         </div>
     );
 };

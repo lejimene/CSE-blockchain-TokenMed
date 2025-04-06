@@ -1,15 +1,15 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Dashboard from './components/Dashboard';
-import Unregistered from './components/Signup';
-import Registered from './components/Navbar';
+import AccessPage from './pages/Sign&Signup';
+import PatientPage from './pages/PatientPage';
+import DoctorPage from './pages/DoctorPage';
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/unregistered" element={<Unregistered />} />
-        <Route path="/registered" element={<Registered />} />
+        <Route path="/" element={<AccessPage />} />
+        <Route path="/patient" element={<PatientPage />} />
+        <Route path="/doctor" element={<DoctorPage />} />
       </Routes>
     </Router>
   );
