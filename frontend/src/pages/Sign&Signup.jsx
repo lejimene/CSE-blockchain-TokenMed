@@ -28,7 +28,7 @@ const Dashboard = () => {
                 console.log('User Role:', role.toString());
         
                 const roleNumber = role.toNumber ? role.toNumber() : parseInt(role.toString(), 10);
-        
+                console.log(roleNumber)
                 if (roleNumber === 1) {
                     setUserRole(1); // Patient
                 } else if (roleNumber === 2) {

@@ -20,7 +20,6 @@ contract PatientDoctorAccess {
     event AccessGranted(address indexed patient, address indexed doctor, uint256 timestamp);
     event AccessRevoked(address indexed patient, address indexed doctor, uint256 timestamp);
 
-    // Modifier to restrict access to patients only
     modifier onlyPatient() {
         require(
             userRegistry.getUserRole(msg.sender) == UserAccessRegistry.Role.Patient,
@@ -29,7 +28,6 @@ contract PatientDoctorAccess {
         _;
     }
 
-    // Modifier to verify an address is a registered doctor
     modifier onlyDoctor(address doctorAddress) {
         require(
             userRegistry.getUserRole(doctorAddress) == UserAccessRegistry.Role.Doctor,
@@ -38,22 +36,31 @@ contract PatientDoctorAccess {
         _;
     }
 
+    modifier onlyPatientSelf(address patientAddress) {
+        require(msg.sender == patientAddress, "Only the patient can view this information");
+        _;
+    }
+
+    modifier onlyPatientOrDoctor(address patientAddress, address doctorAddress) {
+        require(
+            msg.sender == patientAddress || msg.sender == doctorAddress,
+            "Not authorized to view this access"
+        );
+        _;
+    }
+
     constructor(address _userRegistryAddress) {
         userRegistry = UserAccessRegistry(_userRegistryAddress);
     }
 
-    function setDoctorPatientAccess(address _doctorPatientAccessAddress) external onlyPatient {
+    function setDoctorPatientAccess(address _doctorPatientAccessAddress) external {
         require(address(doctorPatientAccess) == address(0), "Already initialized");
         doctorPatientAccess = DoctorPatientAccess(_doctorPatientAccessAddress);
     }
 
-    function grantDoctorAccess(address doctorAddress) 
-        external 
-        onlyPatient
-        onlyDoctor(doctorAddress)
-    {
+    function grantDoctorAccess(address doctorAddress) external onlyPatient onlyDoctor(doctorAddress) {
         require(
-            authorizationIndex[msg.sender][doctorAddress] == 0 || 
+            authorizationIndex[msg.sender][doctorAddress] == 0 ||
             !patientAuthorizations[msg.sender][authorizationIndex[msg.sender][doctorAddress] - 1].isActive,
             "Access already granted"
         );
@@ -64,17 +71,13 @@ contract PatientDoctorAccess {
             grantTimestamp: block.timestamp,
             isActive: true
         }));
-        
+
         authorizationIndex[msg.sender][doctorAddress] = newIndex + 1;
         doctorPatientAccess.updateAccessStatus(msg.sender, doctorAddress, true);
         emit AccessGranted(msg.sender, doctorAddress, block.timestamp);
     }
 
-    function revokeDoctorAccess(address doctorAddress) 
-        external 
-        onlyPatient
-        onlyDoctor(doctorAddress)
-    {
+    function revokeDoctorAccess(address doctorAddress) external onlyPatient onlyDoctor(doctorAddress) {
         uint256 index = authorizationIndex[msg.sender][doctorAddress];
         require(index > 0, "No access granted to this doctor");
 
@@ -86,27 +89,29 @@ contract PatientDoctorAccess {
         emit AccessRevoked(msg.sender, doctorAddress, block.timestamp);
     }
 
-    // View functions with address validation
-    function hasAccess(address patientAddress, address doctorAddress) 
-        external 
-        view 
-        returns (bool) 
+    function hasAccess(address patientAddress, address doctorAddress)
+        external
+        view
+        onlyPatientOrDoctor(patientAddress, doctorAddress)
+        returns (bool)
     {
-        // Validate both addresses
-        if (userRegistry.getUserRole(patientAddress) != UserAccessRegistry.Role.Patient ||
-            userRegistry.getUserRole(doctorAddress) != UserAccessRegistry.Role.Doctor) {
+        if (
+            userRegistry.getUserRole(patientAddress) != UserAccessRegistry.Role.Patient ||
+            userRegistry.getUserRole(doctorAddress) != UserAccessRegistry.Role.Doctor
+        ) {
             return false;
         }
-        
+
         uint256 index = authorizationIndex[patientAddress][doctorAddress];
         if (index == 0) return false;
         return patientAuthorizations[patientAddress][index - 1].isActive;
     }
 
-    function getAllAuthorizations(address patientAddress) 
-        external 
-        view 
-        returns (DoctorAccess[] memory) 
+    function getAllAuthorizations(address patientAddress)
+        external
+        view
+        onlyPatientSelf(patientAddress)
+        returns (DoctorAccess[] memory)
     {
         require(
             userRegistry.getUserRole(patientAddress) == UserAccessRegistry.Role.Patient,
@@ -115,39 +120,39 @@ contract PatientDoctorAccess {
         return patientAuthorizations[patientAddress];
     }
 
-    function getActiveAuthorizations(address patientAddress) 
-        external 
-        view 
-        returns (DoctorAccess[] memory) 
+    function getActiveAuthorizations(address patientAddress)
+        external
+        view
+        onlyPatientSelf(patientAddress)
+        returns (DoctorAccess[] memory)
     {
         require(
             userRegistry.getUserRole(patientAddress) == UserAccessRegistry.Role.Patient,
             "Address is not a registered patient"
         );
-        
+
         DoctorAccess[] storage all = patientAuthorizations[patientAddress];
         uint256 activeCount = 0;
-        
         for (uint256 i = 0; i < all.length; i++) {
             if (all[i].isActive) activeCount++;
         }
-        
+
         DoctorAccess[] memory result = new DoctorAccess[](activeCount);
         uint256 resultIndex = 0;
-        
         for (uint256 i = 0; i < all.length; i++) {
             if (all[i].isActive) {
-                result[resultIndex] = all[i];
-                resultIndex++;
+                result[resultIndex++] = all[i];
             }
         }
+
         return result;
     }
 
-    function getAuthorizationTime(address patientAddress, address doctorAddress) 
-        external 
-        view 
-        returns (uint256) 
+    function getAuthorizationTime(address patientAddress, address doctorAddress)
+        external
+        view
+        onlyPatientOrDoctor(patientAddress, doctorAddress)
+        returns (uint256)
     {
         require(
             userRegistry.getUserRole(patientAddress) == UserAccessRegistry.Role.Patient,
@@ -157,7 +162,7 @@ contract PatientDoctorAccess {
             userRegistry.getUserRole(doctorAddress) == UserAccessRegistry.Role.Doctor,
             "Address is not a registered doctor"
         );
-        
+
         uint256 index = authorizationIndex[patientAddress][doctorAddress];
         if (index == 0) return 0;
         return patientAuthorizations[patientAddress][index - 1].grantTimestamp;

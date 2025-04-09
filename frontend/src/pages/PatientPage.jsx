@@ -1,144 +1,184 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { patientDoctorAccessConfig } from "../contracts/contracts-config";
-import { userRegistryConfig } from "../contracts/contracts-config";
+import { patientDoctorAccessConfig, doctorPatientAccessConfig, userRegistryConfig } from "../contracts/contracts-config";
 import { useNavigate } from "react-router-dom";
 import "../styles/pages/PatientPage.css";
 
 const PatientPage = () => {
     const [account, setAccount] = useState(null);
-    const [contract, setContract] = useState(null);
     const [doctorAddress, setDoctorAddress] = useState("");
     const [accessStatus, setAccessStatus] = useState(null);
-    const [myDoctors, setMyDoctors] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+    const [myDoctors, setMyDoctors] = useState([]);
+    const [error, setError] = useState(null);
+    const [isCheckingRole, setIsCheckingRole] = useState(true);
     const navigate = useNavigate();
 
-    const PatDocAccessAdress = patientDoctorAccessConfig.address
-    const PatDocAccessABI = patientDoctorAccessConfig.abi
+    // Initialize contracts
+    const initializeContracts = useCallback(async (provider, signer) => {
+        const userRegistryContract = new ethers.Contract(
+            userRegistryConfig.address,
+            userRegistryConfig.abi,
+            provider
+        );
 
-    const userRegistryAddress = userRegistryConfig.address 
-    const userRegistryABI = userRegistryConfig.abi 
+        const patientDoctorAccessContract = new ethers.Contract(
+            patientDoctorAccessConfig.address,
+            patientDoctorAccessConfig.abi,
+            signer || provider
+        );
 
-    // Initialize contract and check wallet connection
-    useEffect(() => {
-        async function init() {
-            if (window.ethereum) {
-                try {
-                    // Request account access
-                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                    setAccount(accounts[0]);
-                    
-                    // Setup provider and contract
-                    const provider = new ethers.BrowserProvider(window.ethereum);
-                    const signer = await provider.getSigner();
-                    const contractInstance = new ethers.Contract(PatDocAccessAdress, PatDocAccessABI, signer);
-                    setContract(contractInstance);
-
-                    // Listen for account changes
-                    window.ethereum.on('accountsChanged', (accounts) => {
-                        setAccount(accounts[0]);
-                    });
-
-                } catch (err) {
-                    console.error("Error connecting to MetaMask:", err);
-                    setError("Failed to connect to wallet");
-                }
-            } else {
-                setError("Please install MetaMask to use this application");
-            }
-        }
-
-        init();
-
-        return () => {
-            if (window.ethereum) {
-                window.ethereum.removeListener('accountsChanged', () => {});
-            }
-        };
+        return { userRegistryContract, patientDoctorAccessContract };
     }, []);
 
-    // Check access status for a specific doctor
-    const checkAccessStatus = async (doctorAddr) => {
-        if (!contract || !account) return;
-        
+    // Check user role on load
+    useEffect(() => {
+        const checkUserRole = async () => {
+            try {
+                const { ethereum } = window;
+                if (!ethereum?.isMetaMask) {
+                    alert("Please install MetaMask!");
+                    return navigate("/");
+                }
+
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                if (!accounts.length) return navigate("/");
+                setAccount(accounts[0]);
+
+                const provider = new ethers.BrowserProvider(ethereum);
+                const signer = await provider.getSigner();
+                const { userRegistryContract } = await initializeContracts(provider, signer);
+
+                const role = await userRegistryContract.getUserRole(accounts[0]);
+                const roleNumber = Number(role);
+
+                if (roleNumber !== 1) {
+                    alert("Only patients can access this page");
+                    return navigate("/");
+                }
+
+                // Load doctors immediately after role verification
+                await fetchMyDoctors();
+            } catch (error) {
+                console.error("Initialization error:", error);
+                setError("Failed to initialize patient dashboard");
+            } finally {
+                setIsCheckingRole(false);
+            }
+        };
+
+        checkUserRole();
+    }, [navigate, initializeContracts]);
+
+    // Check access status
+    const checkAccessStatus = async (doctorAddress) => {
+        if (!ethers.isAddress(doctorAddress)) {
+            setError("Invalid Ethereum address");
+            return;
+        }
+
         setLoading(true);
         try {
-            const hasAccess = await contract.hasAccessToPatient(doctorAddr, account);
-            setAccessStatus(hasAccess);
-            setError("");
-        } catch (err) {
-            console.error("Error checking access status:", err);
-            setError("Failed to check access status");
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const { patientDoctorAccessContract, userRegistryContract } = await initializeContracts(provider, null);
+
+            // Verify the address is a registered doctor
+            const doctorRole = await userRegistryContract.getUserRole(doctorAddress);
+            if (Number(doctorRole) !== 2) {
+                throw new Error("The address is not a registered doctor");
+            }
+
+            const status = await patientDoctorAccessContract.hasAccess(account, doctorAddress);
+            setAccessStatus(status);
+        } catch (error) {
+            console.error("Access check failed:", error);
+            setError(error.message || "Failed to check access status");
         } finally {
             setLoading(false);
         }
     };
 
-    // Get all doctors who have access to this patient
-    const fetchMyDoctors = async () => {
-        if (!contract || !account) return;
-        
-        setLoading(true);
-        try {
-            // Note: You might need to adjust this based on your actual contract functions
-            // This assumes you have a way to get all doctors with access
-            const doctors = await contract.getActivePatientAccess(account);
-            setMyDoctors(doctors);
-            setError("");
-        } catch (err) {
-            console.error("Error fetching doctors:", err);
-            setError("Failed to fetch your doctors");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Grant access to a doctor
+    // Grant access to doctor
     const grantAccess = async () => {
-        if (!contract || !doctorAddress) return;
-        
         setLoading(true);
         try {
-            // Note: This assumes you have a function in PatientDoctorAccess to request access
-            const tx = await contract.requestAccess(doctorAddress);
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const { patientDoctorAccessContract, userRegistryContract } = await initializeContracts(provider, signer);
+
+            // Verify the address is a registered doctor
+            const doctorRole = await userRegistryContract.getUserRole(doctorAddress);
+            if (Number(doctorRole) !== 2) {
+                throw new Error("The address is not a registered doctor");
+            }
+
+            const tx = await patientDoctorAccessContract.grantDoctorAccess(doctorAddress);
             await tx.wait();
-            setError("");
-            alert("Access request sent successfully");
-            fetchMyDoctors(); // Refresh the list
-        } catch (err) {
-            console.error("Error granting access:", err);
-            setError("Failed to grant access");
+            setAccessStatus(true);
+            await fetchMyDoctors();
+        } catch (error) {
+            console.error("Grant access failed:", error);
+            setError(error.reason || error.message || "Failed to grant access");
         } finally {
             setLoading(false);
         }
     };
 
-    // Revoke access from a doctor
-    const revokeAccess = async (doctorAddr) => {
-        if (!contract || !doctorAddr) return;
-        
+    // Revoke access from doctor
+    const revokeAccess = async (address) => {
         setLoading(true);
         try {
-            // Note: This assumes you have a function in PatientDoctorAccess to revoke access
-            const tx = await contract.revokeAccess(doctorAddr);
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const { patientDoctorAccessContract } = await initializeContracts(provider, signer);
+
+            const tx = await patientDoctorAccessContract.revokeDoctorAccess(address);
             await tx.wait();
-            setError("");
-            alert("Access revoked successfully");
-            fetchMyDoctors(); // Refresh the list
-        } catch (err) {
-            console.error("Error revoking access:", err);
-            setError("Failed to revoke access");
+            setAccessStatus(false);
+            await fetchMyDoctors();
+        } catch (error) {
+            console.error("Revoke access failed:", error);
+            setError(error.reason || "Failed to revoke access");
         } finally {
             setLoading(false);
         }
     };
+
+    // Fetch list of authorized doctors
+    const fetchMyDoctors = async () => {
+        setLoading(true);
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const { patientDoctorAccessContract } = await initializeContracts(provider, null);
+
+            // Get both active and inactive authorizations
+            const allDoctors = await patientDoctorAccessContract.getAllAuthorizations(account);
+            
+            // Filter to only show active doctors by default
+            const activeDoctors = allDoctors.filter(doctor => doctor.isActive);
+            
+            setMyDoctors(activeDoctors);
+        } catch (error) {
+            console.error("Failed to fetch doctors:", error);
+            setError("Failed to load doctor list");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isCheckingRole) {
+        return (
+            <div className="loading-screen">
+                <h2>Verifying your patient status...</h2>
+                <p>Please wait while we confirm your role</p>
+            </div>
+        );
+    }
 
     return (
         <div className="patient-dashboard">
             <h1>Patient Dashboard</h1>
-            
+
             {!account ? (
                 <div className="wallet-notice">
                     <p>Please connect your wallet to continue</p>
@@ -159,9 +199,9 @@ const PatientPage = () => {
                                 type="text"
                                 value={doctorAddress}
                                 onChange={(e) => setDoctorAddress(e.target.value)}
-                                placeholder="Enter doctor's address"
+                                placeholder="Enter doctor's 0x address"
                             />
-                            <button 
+                            <button
                                 onClick={() => checkAccessStatus(doctorAddress)}
                                 disabled={loading || !doctorAddress}
                             >
@@ -173,16 +213,18 @@ const PatientPage = () => {
                             <div className="access-status">
                                 <p>Access Status: {accessStatus ? "Granted" : "Not Granted"}</p>
                                 {accessStatus ? (
-                                    <button 
+                                    <button
                                         onClick={() => revokeAccess(doctorAddress)}
                                         disabled={loading}
+                                        className="revoke-btn"
                                     >
                                         {loading ? "Processing..." : "Revoke Access"}
                                     </button>
                                 ) : (
-                                    <button 
+                                    <button
                                         onClick={grantAccess}
                                         disabled={loading}
+                                        className="grant-btn"
                                     >
                                         {loading ? "Processing..." : "Grant Access"}
                                     </button>
@@ -193,28 +235,48 @@ const PatientPage = () => {
 
                     <div className="my-doctors">
                         <h2>Doctors With Access</h2>
-                        <button onClick={fetchMyDoctors} disabled={loading}>
-                            {loading ? "Loading..." : "Refresh List"}
+                        <button 
+                            onClick={fetchMyDoctors} 
+                            disabled={loading}
+                            className="refresh-btn"
+                        >
+                            {loading ? "Refreshing..." : "Refresh List"}
                         </button>
-                        
+
                         {myDoctors.length > 0 ? (
-                            <ul>
+                            <ul className="doctor-list">
                                 {myDoctors.map((doctor, index) => (
-                                    <li key={index}>
-                                        <p>Doctor Address: {doctor.patientAddress}</p>
-                                        <p>Access Granted: {new Date(doctor.grantTimestamp * 1000).toLocaleString()}</p>
-                                        <button onClick={() => revokeAccess(doctor.patientAddress)}>
-                                            Revoke Access
+                                    <li key={index} className="doctor-item">
+                                        <div className="doctor-info">
+                                            <p className="doctor-address">Doctor: {doctor.doctorAddress}</p>
+                                            <p className="access-time">Since: {new Date(doctor.grantTimestamp * 1000).toLocaleString()}</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => revokeAccess(doctor.doctorAddress)}
+                                            disabled={loading}
+                                            className="revoke-btn"
+                                        >
+                                            Revoke
                                         </button>
                                     </li>
                                 ))}
                             </ul>
                         ) : (
-                            <p>No doctors currently have access to your records</p>
+                            <p className="no-doctors">No doctors have access to your records</p>
                         )}
                     </div>
 
-                    {error && <div className="error-message">{error}</div>}
+                    {error && (
+                        <div className="error-message">
+                            <p>{error}</p>
+                            <button 
+                                onClick={() => setError(null)}
+                                className="dismiss-btn"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
         </div>
