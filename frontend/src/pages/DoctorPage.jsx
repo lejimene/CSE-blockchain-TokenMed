@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { doctorPatientAccessConfig, userRegistryConfig } from "../contracts/contracts-config";
+import { doctorPatientAccessConfig,patientDoctorAccessConfig, userRegistryConfig } from "../contracts/contracts-config";
 import { useNavigate } from "react-router-dom";
 import "../styles/pages/DoctorPage.css";
 
@@ -76,23 +76,36 @@ const DoctorPage = () => {
             setError("Invalid Ethereum address");
             return;
         }
-
+    
         setLoading(true);
+        setError(null);
+        
         try {
+            // 1. Get current provider and signer
             const provider = new ethers.BrowserProvider(window.ethereum);
-            const { doctorPatientAccessContract, userRegistryContract } = await initializeContracts(provider, null);
-
-            // Verify the address is a registered patient
+            const signer = await provider.getSigner();
+            const currentAddress = await signer.getAddress();
+    
+            // 2. Initialize contracts WITH signer
+            const { doctorPatientAccessContract, userRegistryContract } = await initializeContracts(provider, signer);
+    
+            // 3. Verify patient role
             const patientRole = await userRegistryContract.getUserRole(patientAddress);
             if (Number(patientRole) !== 1) {
                 throw new Error("The address is not a registered patient");
             }
-
-            const status = await doctorPatientAccessContract.hasAccessToPatient(account, patientAddress);
+    
+            // 4. Check access - use CURRENT address (not React state)
+            const status = await doctorPatientAccessContract.hasAccessToPatient(
+                currentAddress, // Use signer's address
+                patientAddress,
+                { gasLimit: 500000 }
+            );
+            
             setAccessStatus(status);
         } catch (error) {
             console.error("Access check failed:", error);
-            setError(error.message || "Failed to check access status");
+            setError(error.reason || error.message || "Failed to check access status");
         } finally {
             setLoading(false);
         }
@@ -101,42 +114,73 @@ const DoctorPage = () => {
     // Fetch patients
     const fetchMyPatients = async () => {
         setLoading(true);
+        setError(null); // Reset previous errors
+        
         try {
+            // 1. Get current provider and signer
             const provider = new ethers.BrowserProvider(window.ethereum);
-            const { doctorPatientAccessContract } = await initializeContracts(provider, null);
-
-            const patients = await doctorPatientAccessContract.getActivePatientAccess();
-            setMyPatients(patients);
+            const signer = await provider.getSigner();
+            const currentAddress = await signer.getAddress();
+    
+            // 2. Initialize contract WITH signer
+            const { doctorPatientAccessContract } = await initializeContracts(provider, signer);
+    
+            // 3. Fetch patients with gas limit
+            const patients = await doctorPatientAccessContract.getActivePatientAccess({
+                gasLimit: 500000 // Prevents out-of-gas
+            });
+    
+            // 4. Decode struct array if needed (check console.log first)
+            console.log("Raw patients data:", patients); // Inspect structure
+            
+            // If patients are returned as [address, timestamp, bool] arrays:
+            const formattedPatients = patients.map(patient => ({
+                patientAddress: patient[0],          // Array index 0
+                grantTimestamp: Number(patient[1]),  // Index 1 (convert BigNumber)
+                isActive: patient[2]                 // Index 2
+            }));
+    
+            setMyPatients(formattedPatients);
         } catch (error) {
             console.error("Failed to fetch patients:", error);
-            setError("Failed to load patient list");
+            setError(error.reason || error.message || "Failed to load patient list");
         } finally {
             setLoading(false);
         }
     };
 
     // Revoke access
-    const revokeAccess = async (address) => {
+    const revokeAccess = async (patientAddress) => {
         setLoading(true);
+        setError(null);
+        
         try {
+            // 1. Get current provider and signer
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const { doctorPatientAccessContract } = await initializeContracts(provider, signer);
-
-            const tx = await doctorPatientAccessContract.updateAccessStatus(
-                address,
-                account,
-                false // isGranted
+            const currentAddress = await signer.getAddress();
+    
+            // 2. Initialize PATIENT'S contract (PatientDoctorAccess)
+            const patientDoctorAccessContract = new ethers.Contract(
+                patientDoctorAccessConfig.address, // Use PatientDoctorAccess address
+                patientDoctorAccessConfig.abi,
+                signer
             );
+    
+            // 3. Call revokeDoctorAccess on PatientDoctorAccess
+            const tx = await patientDoctorAccessContract.revokeDoctorAccess(
+                currentAddress, // Doctor's address (the one being revoked)
+                { gasLimit: 500000 }
+            );
+            
             await tx.wait();
             
-            if (address === patientAddress) {
-                setAccessStatus(false);
-            }
+            // 4. Update UI
+            setAccessStatus(false);
             await fetchMyPatients();
         } catch (error) {
             console.error("Revoke access failed:", error);
-            setError(error.reason || "Failed to revoke access");
+            setError(error.reason || error.message || "Failed to revoke access");
         } finally {
             setLoading(false);
         }
@@ -152,8 +196,14 @@ const DoctorPage = () => {
     }
 
     return (
-        <div className="doctor-dashboard">
-            <h1>Doctor Dashboard</h1>
+        <div className="doctor-page-container">
+            <header className="doctor-header">
+                <div className="logo">TokenMed</div>
+                <div className="dashboard-title">Doctor Dashboard</div>
+                <div className="account-info">
+                    {account ? <span>Connected as: {account}</span> : <span>Not Connected</span>}
+                </div>
+            </header>
 
             {!account ? (
                 <div className="wallet-notice">
@@ -163,12 +213,8 @@ const DoctorPage = () => {
                     </button>
                 </div>
             ) : (
-                <>
-                    <div className="wallet-info">
-                        <p>Connected as: {account}</p>
-                    </div>
-
-                    <div className="access-control">
+                <main className="doctor-main">
+                    <section className="access-section">
                         <h2>Manage Patient Access</h2>
                         <div className="input-group">
                             <input
@@ -189,7 +235,7 @@ const DoctorPage = () => {
                             <div className="access-status">
                                 <p>Access Status: {accessStatus ? "Granted" : "Not Granted"}</p>
                                 {accessStatus && (
-                                    <button
+                                    <button className="revoke_btn"
                                         onClick={() => revokeAccess(patientAddress)}
                                         disabled={loading}
                                     >
@@ -198,41 +244,39 @@ const DoctorPage = () => {
                                 )}
                             </div>
                         )}
-                    </div>
+                    </section>
 
-                    <div className="my-patients">
+                    <section className="patients-section">
                         <h2>Patients With Access</h2>
-                        <button onClick={fetchMyPatients} disabled={loading}>
+                        <button onClick={fetchMyPatients} disabled={loading} className="refresh-btn">
                             {loading ? "Refreshing..." : "Refresh List"}
                         </button>
 
                         {myPatients.length > 0 ? (
                             <ul>
-                                {myPatients.map((patient, index) => (
-                                    <li key={index}>
-                                        <p>Patient: {patient.patientAddress}</p>
-                                        <p>Since: {new Date(patient.grantTimestamp * 1000).toLocaleString()}</p>
-                                        <button 
-                                            onClick={() => revokeAccess(patient.patientAddress)}
-                                            disabled={loading}
-                                        >
-                                            Revoke
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
+                            {myPatients.map((patient, index) => (
+                              <li key={index} className="patient-item">
+                                <div className="patient-details">
+                                  <p className="patient-address">Patient: {patient.patientAddress}</p>
+                                  <p className="patient-date">
+                                    Date and Time access was granted: {new Date(patient.grantTimestamp * 1000).toLocaleString()}
+                                  </p>
+                                </div>
+                                <button 
+                                  className="revoke-btn"
+                                  onClick={() => revokeAccess(patient.patientAddress)}
+                                  disabled={loading}
+                                >
+                                  Revoke
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
                         ) : (
                             <p>No patients have granted you access</p>
                         )}
-                    </div>
-
-                    {error && (
-                        <div className="error-message">
-                            <p>{error}</p>
-                            <button onClick={() => setError(null)}>Dismiss</button>
-                        </div>
-                    )}
-                </>
+                    </section>
+                </main>
             )}
         </div>
     );

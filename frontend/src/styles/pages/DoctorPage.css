@@ -1,0 +1,150 @@
+.doctor-page-container {
+    padding: 20px;
+    font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+}
+
+.doctor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #7de1f7;
+    padding: 15px 25px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+    font-weight: bold;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #004466;
+    flex: 1;
+}
+
+.dashboard-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    text-align: center;
+    flex: 2;
+    color: #333;
+    font-weight: bold;
+}
+
+.account-info {
+    padding: 20px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-align: right;
+    color: #444;
+    flex: 1;
+    word-break: break-all;
+    font-weight: bold;
+}
+
+.doctor-main {
+    display: flex;
+    gap: 30px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.access-section,
+.patients-section {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    flex: 1;
+    min-width: 320px;
+    max-width: 48%;
+}
+
+.patient-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    margin-top: 10px;
+    background-color: #f9f9f9;
+    flex-wrap: wrap;
+  }
+
+  .patient-details {
+    flex-grow: 1;
+    max-width: 100%;
+  }
+  
+  .patient-address {
+    font-weight: bold;
+    word-break: break-word;
+    margin-bottom: 6px;
+  }
+  
+  .patient-date {
+    color: #555;
+    font-size: 0.9rem;
+    margin-top: 0;
+  }
+
+  .revoke_btn
+  {
+    background-color: red;
+  }
+
+.patient-item span {
+    flex: 1;
+}
+
+.remove-btn {
+    margin-left: 10px;
+}
+
+
+@media (max-width: 808px) {
+    .doctor-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        text-align: left;
+    }
+
+    .logo,
+    .dashboard-title,
+    .account-info {
+        flex: unset;
+        width: 100%;
+    }
+
+    .dashboard-title {
+        text-align: center;
+    }
+
+    .doctor-main {
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .access-section,
+    .patients-section {
+        max-width: 100%;
+    }
+
+    .patient-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .patient-item span,
+    .remove-btn {
+        margin-top: 5px;
+    }
+
+    .remove-btn {
+        align-self: flex-end;
+        margin-top: 10px;
+    }
+}

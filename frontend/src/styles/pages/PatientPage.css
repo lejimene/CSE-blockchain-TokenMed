@@ -1,71 +1,240 @@
-.patient-auth-container {
-    width: 100%;
-    max-width: 400px;
-    margin: 50px auto;
-    padding: 20px;
-    background: #fff;
-    border-radius: 10px;
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-    text-align: center;
+/* General Styles */
+.patient-dashboard {
+  padding: 20px;
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+}
+
+.top-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #7de1f7;
+  padding: 15px 25px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+  font-weight: bold;
+}
+
+.left, .center, .right {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.center {
+  text-align: center;
+}
+
+.wallet-info {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Flexbox layout for dashboard content */
+.dashboard-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  justify-content: space-between;
+}
+
+.access-control, .my-doctors {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  flex: 1;
+  min-width: 300px;
+  max-width: 48%;
+}
+
+.access-control .input-group,
+.my-doctors .doctor-list {
+  margin-bottom: 15px;
+}
+
+.access-status,
+.doctor-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.access-status p, .doctor-item p {
+  margin: 5px 0;
+}
+
+/* Button Styles */
+.grant-btn, .revoke-btn, .refresh-btn, .dismiss-btn {
+  padding: 8px 15px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.grant-btn:disabled, .revoke-btn:disabled, .refresh-btn:disabled, .dismiss-btn:disabled {
+  background-color: #dcdcdc;
+  cursor: not-allowed;
+}
+
+/* No doctors message */
+.no-doctors {
+  color: #888;
+  font-style: italic;
+}
+
+/* Error message */
+.error-message {
+  background: #f8d7da;
+  padding: 15px;
+  border-radius: 8px;
+  color: #721c24;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Media Queries for Mobile Responsiveness */
+@media (max-width: 1100px) {
+  .top-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
   }
-  
-  h2 {
-    margin-bottom: 20px;
+
+  .dashboard-main {
+      flex-direction: column;
   }
-  
-  form {
-    display: flex;
-    flex-direction: column;
+
+  .access-control, .my-doctors {
+      max-width: 100%;
   }
-  
-  label {
-    margin: 10px 0 5px;
-    font-weight: bold;
+
+  .access-control .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
   }
-  
-  input {
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+
+  .doctor-item {
+      flex-direction: column;
+      align-items: flex-start;
   }
-  
-  button {
-    margin-top: 15px;
-    padding: 10px;
-    background: #28a745;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
+
+  .doctor-info {
+      margin-bottom: 10px;
   }
-  
-  button:hover {
-    background: #218838;
+
+  .doctor-item button {
+      margin-top: 10px;
   }
-  
-  .dependents-container {
-    margin-top: 20px;
-  }
-  
-  .dependent-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    margin-top: 5px;
-  }
-  
-  .remove-btn {
-    background: #dc3545;
-    color: white;
-    border: none;
-    padding: 5px 10px;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  
-  .remove-btn:hover {
-    background: #c82333;
-  }
-  
+}
+
+/* Styling for buttons in specific states */
+.grant-btn, .revoke-btn, .refresh-btn, .dismiss-btn {
+  padding: 10px 20px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.grant-btn:disabled, .revoke-btn:disabled, .refresh-btn:disabled, .dismiss-btn:disabled {
+  background-color: #dcdcdc;
+  cursor: not-allowed;
+}
+
+/* Doctor list styling */
+.doctor-list {
+  list-style: none;
+  padding: 0;
+}
+
+.doctor-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.doctor-info {
+  flex: 1;
+}
+
+.doctor-address {
+  font-weight: bold;
+}
+
+.access-time {
+  color: #555;
+}
+
+.doctor-item button {
+  background-color: #ff4d4f;
+  border: none;
+  color: white;
+  border-radius: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+/* General styling for form and inputs */
+.input-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+input[type="text"] {
+  padding: 10px;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+button {
+  padding: 10px 20px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:disabled {
+  background-color: #dcdcdc;
+  cursor: not-allowed;
+}
+
+/* Additional styling for "Please connect your wallet" notice */
+.wallet-notice {
+  background-color: #f1f1f1;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.wallet-notice button {
+  padding: 10px 15px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.wallet-notice button:hover {
+  background-color: #005fa3;
+}
+
+.wallet-notice p {
+  margin-bottom: 10px;
+}
