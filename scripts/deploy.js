@@ -3,64 +3,54 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  // Deploy UserAccessRegistry first
+  // Get the deployer account
+  const [deployer] = await hre.ethers.getSigners();
+  console.log("Deploying contracts with the account:", deployer.address);
+
+  // Deploy UserAccessRegistry
   const UserAccessRegistry = await hre.ethers.getContractFactory("UserAccessRegistry");
   const userAccessRegistry = await UserAccessRegistry.deploy();
-  await userAccessRegistry.waitForDeployment();
-  
+  await userAccessRegistry.waitForDeployment(); // Added for safety
   console.log(`UserAccessRegistry deployed to: ${userAccessRegistry.target}`);
 
-  // Now deploy DoctorPatientAccess, passing UserAccessRegistry address
-  const DoctorPatientAccess = await hre.ethers.getContractFactory("DoctorPatientAccess");
-  const doctorPatientAccess = await DoctorPatientAccess.deploy(userAccessRegistry.target);
-  await doctorPatientAccess.waitForDeployment();
-  
-  console.log(`DoctorPatientAccess deployed to: ${doctorPatientAccess.target}`);
+  // Deploy PatientDoctorAccessController
+  const PatientDoctorAccessController = await hre.ethers.getContractFactory("PatientDoctorAccessController");
+  const patientDoctorAccessController = await PatientDoctorAccessController.deploy(userAccessRegistry.target);
+  await patientDoctorAccessController.waitForDeployment(); // Added for safety
+  console.log(`PatientDoctorAccessController deployed to: ${patientDoctorAccessController.target}`);
 
-  // Now deploy PatientDoctorAccess, passing UserAccessRegistry address
-  const PatientDoctorAccess = await hre.ethers.getContractFactory("PatientDoctorAccess");
-  const patientDoctorAccess = await PatientDoctorAccess.deploy(userAccessRegistry.target);
-  await patientDoctorAccess.waitForDeployment();
-  
-  console.log(`PatientDoctorAccess deployed to: ${patientDoctorAccess.target}`);
+  // Deploy EHR_NFT
+  const EHR_NFT = await hre.ethers.getContractFactory("EHR_NFT");
+  const ehrNFT = await EHR_NFT.deploy();
+  await ehrNFT.waitForDeployment(); // Added for safety
+  console.log(`EHR_NFT deployed to: ${ehrNFT.target}`);
 
-  // Create or update .env file with contract addresses
-  const envPath = path.join(__dirname, '..','frontend', '.env');
-  let envContents = '';
-  
-  // Read existing .env file if it exists
-  if (fs.existsSync(envPath)) {
-    envContents = fs.readFileSync(envPath, 'utf8');
-    
-    // Remove existing contract address entries if they exist
-    envContents = envContents.split('\n')
-      .filter(line => !line.startsWith('USER_ACCESS_REGISTRY_ADDRESS=') &&
-                     !line.startsWith('DOCTOR_PATIENT_ACCESS_ADDRESS=') &&
-                     !line.startsWith('PATIENT_DOCTOR_ACCESS_ADDRESS='))
-      .join('\n');
+  // Save addresses to both JSON and .env
+  const contracts = {
+    userAccessRegistry: userAccessRegistry.target,
+    patientDoctorAccessController: patientDoctorAccessController.target,
+    ehrNFT: ehrNFT.target
+  };
+
+  // Save to frontend JSON
+  const contractsDir = path.join(__dirname, '..', 'frontend', 'src', 'contracts');
+  if (!fs.existsSync(contractsDir)) {
+    fs.mkdirSync(contractsDir, { recursive: true });
   }
-  
-  // Add new contract addresses
-  envContents += `\nUSER_ACCESS_REGISTRY_ADDRESS=${userAccessRegistry.target}\n`;
-  envContents += `DOCTOR_PATIENT_ACCESS_ADDRESS=${doctorPatientAccess.target}\n`;
-  envContents += `PATIENT_DOCTOR_ACCESS_ADDRESS=${patientDoctorAccess.target}\n`;
-  
-  // Write to .env file
-  fs.writeFileSync(envPath, envContents.trim());
-  console.log('Contract addresses written to .env file');
+  fs.writeFileSync(
+    path.join(contractsDir, 'contract-addresses.json'),
+    JSON.stringify(contracts, null, 2)
+  );
 
-  console.log(`
-    Deployment complete!
-    
-    UserAccessRegistry: ${userAccessRegistry.target}
-    DoctorPatientAccess: ${doctorPatientAccess.target}
-    PatientDoctorAccess: ${patientDoctorAccess.target}
-    
-    To verify in console:
-    npx hardhat console --network localhost
-    > const contract = await ethers.getContractAt("UserAccessRegistry", "${userAccessRegistry.target}")
-    > await contract.getUserRole("YOUR_TEST_ADDRESS")
-  `);
+  // Save to .env
+  const envPath = path.join(__dirname, '..', 'frontend', '.env');
+  let envContents = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+  envContents += `\nVITE_USER_ACCESS_REGISTRY_ADDRESS=${userAccessRegistry.target}`;
+  envContents += `\nVITE_PATIENT_DOCTOR_ACCESS_CONTROLLER_ADDRESS=${patientDoctorAccessController.target}`;
+  envContents += `\nVITE_EHR_NFT_ADDRESS=${ehrNFT.target}\n`;
+  fs.writeFileSync(envPath, envContents.trim());
+
+  console.log('Addresses saved to both JSON and .env');
 }
 
 main().catch((error) => {

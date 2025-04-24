@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { patientDoctorAccessConfig, doctorPatientAccessConfig, userRegistryConfig } from "../contracts/contracts-config";
+import { PatientDoctorAccessControllerConfig, userRegistryConfig , EHR_NFTConfig} from "../contracts/contracts-config";
 import { useNavigate } from "react-router-dom";
 import "../styles/pages/PatientPage.css";
+import NFTMinter from '../components/Minting';
 
 const PatientPage = () => {
     const [account, setAccount] = useState(null);
     const [doctorAddress, setDoctorAddress] = useState("");
-    const [accessStatus, setAccessStatus] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [myDoctors, setMyDoctors] = useState([]);
+    const [activeDoctors, setActiveDoctors] = useState([]);
     const [error, setError] = useState(null);
     const [isCheckingRole, setIsCheckingRole] = useState(true);
     const navigate = useNavigate();
+    const [doctorDetails, setDoctorDetails] = useState({});
+
+
 
     // Initialize contracts
     const initializeContracts = useCallback(async (provider, signer) => {
@@ -22,14 +25,16 @@ const PatientPage = () => {
             provider
         );
 
-        const patientDoctorAccessContract = new ethers.Contract(
-            patientDoctorAccessConfig.address,
-            patientDoctorAccessConfig.abi,
+        const accessControllerContract = new ethers.Contract(
+            PatientDoctorAccessControllerConfig.address,
+            PatientDoctorAccessControllerConfig.abi,
             signer || provider
         );
 
-        return { userRegistryContract, patientDoctorAccessContract };
+        return { userRegistryContract, accessControllerContract };
     }, []);
+
+    console.log("Current account:", account);
 
     // Check user role on load
     useEffect(() => {
@@ -37,72 +42,28 @@ const PatientPage = () => {
             try {
                 const { ethereum } = window;
                 
-                // 1. First check if MetaMask is installed
                 if (!ethereum?.isMetaMask) {
                     alert("Please install MetaMask!");
                     return navigate("/");
                 }
-    
-                // 2. Wait for provider to be ready
-                if (!ethereum.selectedAddress) {
-                    await new Promise(resolve => {
-                        const checkAddress = () => {
-                            if (ethereum.selectedAddress) {
-                                ethereum.removeListener('accountsChanged', checkAddress);
-                                resolve();
-                            }
-                        };
-                        ethereum.on('accountsChanged', checkAddress);
-                    });
-                }
-    
-                // 3. Get accounts with a timeout fallback
-                const accounts = await Promise.race([
-                    ethereum.request({ method: 'eth_requestAccounts' }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Provider timeout')), 3000)
-                    )
-                ]);
-    
-                if (!accounts.length) {
-                    return navigate("/");
-                }
+
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                if (!accounts.length) return navigate("/");
+                
                 setAccount(accounts[0]);
-    
-                // 4. Initialize provider with error handling
-                let provider;
-                try {
-                    provider = new ethers.BrowserProvider(ethereum);
-                } catch (e) {
-                    console.error("Provider init error:", e);
-                    throw new Error("Failed to connect to wallet");
-                }
-    
+                const provider = new ethers.BrowserProvider(ethereum);
                 const signer = await provider.getSigner();
+                
                 const { userRegistryContract } = await initializeContracts(provider, signer);
-    
-                // 5. Verify role - FIXED: Using accounts[0] instead of doctorAddress
                 const role = await userRegistryContract.getUserRole(accounts[0]);
                 const roleNumber = role.toNumber ? role.toNumber() : Number(role);
-    
+
                 if (roleNumber !== 1) { // 1 = Patient
                     alert("Only patients can access this page");
                     return navigate("/");
                 }
-    
-                // 6. Load doctors with retry logic
-                let retries = 3;
-                while (retries > 0) {
-                    try {
-                        await fetchMyDoctors();
-                        break;
-                    } catch (fetchError) {
-                        console.error(`Fetch failed (${retries} retries left):`, fetchError);
-                        retries--;
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                }
-    
+
+                await fetchActiveDoctors();
             } catch (error) {
                 console.error("Initialization error:", error);
                 setError(error.message || "Failed to initialize patient dashboard");
@@ -110,17 +71,13 @@ const PatientPage = () => {
                 setIsCheckingRole(false);
             }
         };
-    
-        // Add delay for provider initialization
-        const initTimer = setTimeout(() => {
-            checkUserRole();
-        }, 500); // Short delay to ensure provider injection
-    
-        return () => clearTimeout(initTimer);
+
+        checkUserRole();
     }, [navigate, initializeContracts]);
 
-    // Check access status
-    const checkAccessStatus = async (doctorAddress) => {
+
+    // Grant access to doctor
+    const grantAccess = async () => {
         if (!ethers.isAddress(doctorAddress)) {
             setError("Invalid Ethereum address");
             return;
@@ -130,44 +87,19 @@ const PatientPage = () => {
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const { patientDoctorAccessContract, userRegistryContract } = await initializeContracts(provider, signer);
+            const { accessControllerContract, userRegistryContract } = await initializeContracts(provider, signer);
 
             // Verify the address is a registered doctor
             const doctorRole = await userRegistryContract.getUserRole(doctorAddress);
-            const DoctorNumber = doctorRole.toNumber ? doctorRole.toNumber() : parseInt(doctorRole.toString(), 10);
-            if (DoctorNumber !== 2) {
+            const roleNumber = doctorRole.toNumber ? doctorRole.toNumber() : Number(doctorRole);
+            if (roleNumber !== 2) {
                 throw new Error("The address is not a registered doctor");
             }
 
-            const status = await patientDoctorAccessContract.hasAccess(account, doctorAddress);
-            setAccessStatus(status);
-        } catch (error) {
-            console.error("Access check failed:", error);
-            setError(error.message || "Failed to check access status");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Grant access to doctor
-    const grantAccess = async () => {
-        setLoading(true);
-        try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const { patientDoctorAccessContract, userRegistryContract } = await initializeContracts(provider, signer);
-
-            // Verify the address is a registered doctor
-            const doctorRole = await userRegistryContract.getUserRole(doctorAddress);
-            const DoctorNumber = doctorRole.toNumber ? doctorRole.toNumber() : parseInt(doctorRole.toString(), 10);
-            if (DoctorNumber !== 2) {
-                throw new Error("The address is not a registered doctor");
-            }
-
-            const tx = await patientDoctorAccessContract.grantDoctorAccess(doctorAddress);
+            const tx = await accessControllerContract.patientGrantAccess(doctorAddress);
             await tx.wait();
-            setAccessStatus(true);
-            await fetchMyDoctors();
+            await fetchActiveDoctors();
+            setDoctorAddress("");
         } catch (error) {
             console.error("Grant access failed:", error);
             setError(error.reason || error.message || "Failed to grant access");
@@ -177,65 +109,56 @@ const PatientPage = () => {
     };
 
     // Revoke access from doctor
-    const revokeAccess = async (address) => {
+    const revokeAccess = async (doctorAddress) => {
         setLoading(true);
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const { patientDoctorAccessContract } = await initializeContracts(provider, signer);
+            const contract = new ethers.Contract(
+                PatientDoctorAccessControllerConfig.address,
+                PatientDoctorAccessControllerConfig.abi,
+                signer
+            );
 
-            const tx = await patientDoctorAccessContract.revokeDoctorAccess(address);
+            // Get access details with proper BigInt handling
+            const [isActive, grantTime, revokeTime] = await contract.getAccessDetails(await signer.getAddress(), doctorAddress);
+            
+            // Convert BigInt to Number for comparison
+            const hasExistingAccess = grantTime !== 0n; // 0n is BigInt zero
+            
+            if (!hasExistingAccess) {
+                throw new Error("No access relationship exists with this doctor");
+            }
+            if (!isActive) {
+                throw new Error("Access was already revoked");
+            }
+
+            // Execute revoke
+            const tx = await contract.patientRevokeAccess(doctorAddress);
             await tx.wait();
-            setAccessStatus(false);
-            await fetchMyDoctors();
+            await fetchActiveDoctors();
+            
         } catch (error) {
-            console.error("Revoke access failed:", error);
-            setError(error.reason || "Failed to revoke access");
+            console.error("Revoke error:", error);
+            setError(error.message || "Revocation failed");
         } finally {
             setLoading(false);
         }
     };
 
-    // Fetch list of authorized doctors
-    const fetchMyDoctors = async () => {
+    // Fetch active doctors
+    const fetchActiveDoctors = async () => {
         setLoading(true);
-        setError(null);
-        
         try {
-            // 1. Get current provider and signer
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const currentAddress = await signer.getAddress();
-    
-            // 2. Initialize contract with signer
-            const { patientDoctorAccessContract } = await initializeContracts(provider, signer);
-    
-            // 3. Verify patient role (double-check)
-            const { userRegistryContract } = await initializeContracts(provider, signer);
-            const role = await userRegistryContract.getUserRole(currentAddress);
-            if (Number(role) !== 1) {
-                throw new Error("Connected wallet is not registered as patient");
-            }
-    
-            // 4. Call getAllAuthorizations with CURRENT address (not account state)
-            const allDoctors = await patientDoctorAccessContract.getAllAuthorizations(currentAddress, {
-                gasLimit: 500000
-            });
-    
-            // 5. Properly decode struct response
-            const formattedDoctors = allDoctors.map(doctor => ({
-                doctorAddress: doctor[0],
-                grantTimestamp: Number(doctor[1]),
-                isActive: doctor[2]
-            }));
-    
-            // 6. Filter and update state
-            const activeDoctors = formattedDoctors.filter(doctor => doctor.isActive);
-            setMyDoctors(activeDoctors);
-    
+            const { accessControllerContract } = await initializeContracts(provider, signer);
+
+            const doctors = await accessControllerContract.getActiveDoctorsForPatient();
+            setActiveDoctors(doctors);
         } catch (error) {
-            console.error("Doctor fetch error:", error);
-            setError(error.reason || error.message || "Failed to load doctors");
+            console.error("Failed to fetch doctors:", error);
+            setError(error.message || "Failed to load doctors");
         } finally {
             setLoading(false);
         }
@@ -271,6 +194,7 @@ const PatientPage = () => {
                 ) : (
                     <>
                         <div className="dashboard-main">
+                            <NFTMinter account={account} />
                             <div className="access-control">
                                 <h2>Manage Doctor Access</h2>
                                 <div className="input-group">
@@ -281,63 +205,37 @@ const PatientPage = () => {
                                         placeholder="Enter doctor's 0x address"
                                     />
                                     <button
-                                        onClick={() => checkAccessStatus(doctorAddress)}
+                                        onClick={grantAccess}
                                         disabled={loading || !doctorAddress}
                                     >
-                                        {loading ? "Checking..." : "Check Access"}
+                                        {loading ? "Processing..." : "Grant Access"}
                                     </button>
                                 </div>
-
-                                {accessStatus !== null && (
-                                    <div className="access-status">
-                                        <p>Access Status: {accessStatus ? "Granted" : "Not Granted"}</p>
-                                        {accessStatus ? (
-                                            <button
-                                                onClick={() => revokeAccess(doctorAddress)}
-                                                disabled={loading}
-                                                className="revoke-btn"
-                                            >
-                                                {loading ? "Processing..." : "Revoke Access"}
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={grantAccess}
-                                                disabled={loading}
-                                                className="grant-btn"
-                                            >
-                                                {loading ? "Processing..." : "Grant Access"}
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
                             </div>
 
                             <div className="my-doctors">
                                 <h2>Doctors With Access</h2>
                                 <button 
-                                    onClick={fetchMyDoctors} 
+                                    onClick={fetchActiveDoctors} 
                                     disabled={loading}
                                     className="refresh-btn"
                                 >
                                     {loading ? "Refreshing..." : "Refresh List"}
                                 </button>
 
-                                {myDoctors.length > 0 ? (
+                                {activeDoctors.length > 0 ? (
                                     <ul className="doctor-list">
-                                        {myDoctors.map((doctor, index) => (
+                                        {activeDoctors.map((doctor, index) => (
                                             <li key={index} className="doctor-item">
                                                 <div className="doctor-info">
-                                                    <p className="doctor-address">Doctor: {doctor.doctorAddress}</p>
-                                                    <p className="access-time">
-                                                        Date and Time access was granted: {new Date(doctor.grantTimestamp * 1000).toLocaleString()}
-                                                    </p>
+                                                    <p className="doctor-address">Doctor: {doctor}</p>
                                                 </div>
                                                 <button 
-                                                    onClick={() => revokeAccess(doctor.doctorAddress)}
+                                                    onClick={() => revokeAccess(doctor)}
                                                     disabled={loading}
                                                     className="revoke-btn"
                                                 >
-                                                    Revoke
+                                                    Revoke Access
                                                 </button>
                                             </li>
                                         ))}

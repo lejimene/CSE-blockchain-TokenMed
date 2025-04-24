@@ -11,22 +11,3 @@ REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.js
 ```
-How to start it.
-
-get one terminal and do 
-npx hardhat node
-
-Then in another terminal inside the frontend folder to start the site itself do
-npm start
-
-When you create a new contract you must run these commands in two seperate terminals. First connects to hardhat and the other creates a new deployed address but also updates new 
-contract information
-
-npx hardhat node
-run npx hardhat run scripts/deploy.js --network localhost
-
-Any time you create anything new you have to grab inside of artifacts/contracts/some.sol/some.json file and move that file into the frontend/contracts folder.
-
-To start it you must go first do everything above then once running go to admin page first to initalize the contract address
-
-Then you can do the functions stuff.
