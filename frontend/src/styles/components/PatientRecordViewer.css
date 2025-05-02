@@ -1,0 +1,109 @@
+/* Patient Record Viewer Styles */
+.patient-record-viewer {
+    height: 100%;
+}
+
+.view-switcher {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.view-btn {
+    background: gray;
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.view-btn.active {
+    background-color: #3498db;
+    color: white;
+}
+
+.view-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.patient-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.record-section {
+    margin-bottom: 1.5rem;
+}
+
+.record-section h4 {
+    color: #3498db;
+    margin-bottom: 0.5rem;
+}
+
+.record-section p {
+    margin: 0.5rem 0;
+}
+
+.version-history {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.version-history h4 {
+    margin-bottom: 1rem;
+}
+
+.version-history ul {
+    list-style: none;
+    padding: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.version-history li {
+    margin-bottom: 0.5rem;
+}
+
+.version-btn {
+    background: none;
+    border: none;
+    color: #3498db;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+
+.version-btn:hover {
+    background-color: #f0f7fd;
+}
+
+.record-date {
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    margin-top: 1rem;
+    font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .doctor-main {
+        flex-direction: column;
+        padding: 1rem;
+    }
+    
+    .patients-section {
+        max-width: 100%;
+    }
+    
+    .error-message {
+        bottom: 1rem;
+        right: 1rem;
+        left: 1rem;
+    }
+}

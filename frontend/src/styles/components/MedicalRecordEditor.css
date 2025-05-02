@@ -1,0 +1,117 @@
+/* MedicalRecordEditor.css */
+.record-editor {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: #f8fafc;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+.record-editor h3 {
+    color: #1e40af;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e2e8f0;
+    text-align: center;
+}
+
+.record-editor form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.record-editor label {
+    font-weight: 600;
+    color: #334155;
+    font-size: 0.95rem;
+    margin-bottom: -0.75rem;
+}
+
+.record-editor input {
+    padding: 0.75rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.record-editor input:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+
+.record-editor textarea {
+    padding: 0.75rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 1rem;
+    min-height: 100px;
+    resize: vertical;
+    transition: all 0.2s ease;
+}
+
+.record-editor textarea:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+
+.record-editor button {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 0.5rem;
+}
+
+.record-editor button:hover {
+    background-color: #1d4ed8;
+}
+
+.record-editor button:disabled {
+    background-color: #93c5fd;
+    cursor: not-allowed;
+}
+
+.record-editor button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+.error {
+    color: #dc2626;
+    background-color: #fee2e2;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    border-left: 4px solid #dc2626;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .record-editor {
+        padding: 1.5rem;
+        margin: 1rem;
+    }
+    
+    .record-editor h3 {
+        font-size: 1.3rem;
+    }
+}

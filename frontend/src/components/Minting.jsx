@@ -1,113 +1,177 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { EHR_NFTConfig } from '../contracts/contracts-config';
 import { API_CONFIG } from '../config/api';
 import "../styles/components/Minting.css";
+const CONSTANT_IPFS_IMAGE_URI = "ipfs://bafybeib6a6drnuvjpwhsbnd6nbvuqshmmiwjifxcmmj4obsy3zkg6uhc6e";
+const PLATFORM_EXTERNAL_URL = "https://your-ehr-platform.com";
 
-const NFTMinter = ({ account }) => {
-  const [formData, setFormData] = useState({
-    patientName: '',
-    diagnosis: '',
-    treatment: '',
-    date: new Date().toISOString().split('T')[0],
-    encryptedData: '' // For actual EHR data encryption
+const Minting = ({ account }) => {
+  const [ehrData, setEhrData] = useState({
+    name: '',
+    birthDate: '',
+    bloodType: '',
+    conditions: '',
+    medications: ''
   });
-  const [hasMinted, setHasMinted] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [txHash, setTxHash] = useState(null);
-  const [ipfsData, setIpfsData] = useState(null);
-  const [nftDetails, setNftDetails] = useState(null);
+  const [hasMinted, setHasMinted] = useState(false);
+  const [currentDataURI, setCurrentDataURI] = useState('');
+  const [metadataURI, setMetadataURI] = useState('');
+  const [historyURIs, setHistoryURIs] = useState([]);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // Check if user has already minted
-  const checkMintStatus = async () => {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(
-        EHR_NFTConfig.address,
-        EHR_NFTConfig.abi,
-        provider
-      );
-      const status = await contract.hasMinted(account);
-      setHasMinted(status);
-      return status;
-    } catch (err) {
-      console.error("Error checking mint status:", err);
-      return false;
-    }
-  };
-
-  // Handle form input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  // Upload metadata to IPFS via your backend
-  const uploadToIPFS = async (metadata) => {
-    try {
-      const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}`, {
-        method: 'POST',
-        mode: 'cors', // Explicitly set CORS mode
-        headers: {
-          'Content-Type': 'application/json',
-          'x-wallet-address': account
-        },
-        body: JSON.stringify(metadata)
-      });
-  
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to upload to IPFS');
+  // Check minted status and fetch existing data
+  useEffect(() => {
+    const checkMintedStatus = async () => {
+      if (account) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const contract = new ethers.Contract(
+            EHR_NFTConfig.address, 
+            EHR_NFTConfig.abi, 
+            signer
+          );
+          
+          const hasMinted = await contract.hasMintedNFT(account);
+          setHasMinted(hasMinted);
+          
+          if (hasMinted) {
+            const tokenId = await contract.getTokenId(account);
+            const medicalRecord = await contract.getMedicalRecord(tokenId);
+            setCurrentDataURI(medicalRecord.dataURI);
+            setMetadataURI(medicalRecord.metadataURI);
+            setHistoryURIs(medicalRecord.historyURIs);
+            await fetchEHRData(medicalRecord.dataURI);
+          }
+        } catch (error) {
+          console.error('Error in checkMintedStatus:', error);
+          setError('Failed to check minted status: ' + error.message);
+        }
       }
+    };
+    checkMintedStatus();
+  }, [account]);
+
+  const fetchEHRData = async (uri) => {
+    if (!uri) {
+      setError('No data URI available');
+      return;
+    }
+  
+    try {
+      let gatewayUrl = uri.startsWith('ipfs://') 
+        ? `https://gateway.pinata.cloud/ipfs/${uri.split('ipfs://')[1]}`
+        : `https://gateway.pinata.cloud/ipfs/${uri}`;
+    
+      const response = await fetch(gatewayUrl);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   
       const data = await response.json();
-      return data.ipfsUrl;
-    } catch (err) {
-      console.error("IPFS upload error:", err);
-      throw new Error(`IPFS upload failed: ${err.message}`);
+      
+      // Handle both old and new data structures
+      const patientData = data.properties?.patient_data || data;
+      
+      setEhrData({
+        name: patientData.name || '',
+        birthDate: patientData.birthDate || '',
+        bloodType: patientData.bloodType || '',
+        conditions: patientData.conditions || '',
+        medications: patientData.medications || ''
+      });
+    } catch (error) {
+      console.error('Error in fetchEHRData:', error);
+      setError('Failed to load medical record: ' + error.message);
     }
   };
+  
 
-  // Mint NFT with IPFS metadata
-  const mintNFT = async () => {
-    setLoading(true);
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setEhrData(prev => ({ ...prev, [name]: value }));
+  };
+
+const pinToIPFS = async (data, isUpdate = false) => {
+  try {
+    const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}?isUpdate=${isUpdate}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-wallet-address': data.walletAddress || account || 'unknown',
+      },
+      body: JSON.stringify(data),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'IPFS pinning failed');
+    }
+
+    // Handle both response formats (IpfsHash or ipfsHash)
+    const ipfsHash = result.IpfsHash || result.ipfsHash;
+    if (!ipfsHash) {
+      throw new Error('No IPFS hash received in response');
+    }
+
+    return {
+      ...result,
+      IpfsHash: ipfsHash  // Ensure consistent property name
+    };
+  } catch (error) {
+    console.error('IPFS Pinning error:', error);
+    throw new Error(`Error pinning to IPFS: ${error.message}`);
+  }
+};
+
+  const createMetadata = (ehrData, dataURI) => ({
+    name: `Medical Record for ${ehrData.name}`,
+    description: `Electronic Health Record - Last updated ${new Date().toISOString()}`,
+    image: CONSTANT_IPFS_IMAGE_URI,
+    external_url: PLATFORM_EXTERNAL_URL,
+    attributes: [
+      { trait_type: "Record Type", value: "Medical EHR" },
+      { trait_type: "Blood Type", value: ehrData.bloodType || "Unknown" }
+    ],
+    properties: {
+      patient_data: {  // Changed from encrypted_data to patient_data
+        name: ehrData.name,
+        birthDate: ehrData.birthDate,
+        bloodType: ehrData.bloodType,
+        conditions: ehrData.conditions,
+        medications: ehrData.medications,
+        ipfs: dataURI,  // This should now be properly set
+        timestamp: new Date().toISOString()
+      }
+    }
+  });
+
+  const handleMint = async () => {
+    setIsLoading(true);
     setError(null);
-
+    
     try {
-      // 1. Prepare metadata
-      const metadata = {
-        name: `EHR Record for ${formData.patientName}`,
-        description: "Encrypted Electronic Health Record",
-        attributes: [
-          {
-            trait_type: "Diagnosis",
-            value: formData.diagnosis
-          },
-          {
-            trait_type: "Treatment",
-            value: formData.treatment
-          },
-          {
-            trait_type: "Date",
-            value: formData.date
-          }
-        ],
-        encrypted_data: formData.encryptedData, // Actual encrypted EHR data
-        created_at: new Date().toISOString()
+      if (!ehrData.name || !ehrData.birthDate) {
+        throw new Error("Name and birth date are required");
+      }
+  
+      // 1. Pin medical data to IPFS
+      const medicalData = {
+        ...ehrData,
+        timestamp: new Date().toISOString(),
+        owner: account
       };
+      const dataResult = await pinToIPFS(medicalData);
+      const dataURI = `ipfs://${dataResult.IpfsHash}`;
+  
+      // 2. Create and pin metadata (with proper dataURI)
+      const metadata = createMetadata(ehrData, dataURI);
+      const metadataResult = await pinToIPFS(metadata);
+      const metadataURI = `ipfs://${metadataResult.IpfsHash}`;
 
-      // 2. Upload to IPFS
-      const ipfsUri = await uploadToIPFS(metadata);
-      setIpfsData({
-        ipfsUrl: ipfsUri,
-        metadata: metadata
-      });
-
-      // 3. Mint NFT with the IPFS URI
+      // 3. Mint NFT with metadata URI
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(
@@ -116,137 +180,313 @@ const NFTMinter = ({ account }) => {
         signer
       );
 
-      const tx = await contract.mint(ipfsUri);
+      const tx = await contract.mint(metadataURI);
       await tx.wait();
-
-      setTxHash(tx.hash);
+      
+      const tokenId = await contract.getTokenId(account);
+      await contract.updateDataURI(tokenId, dataURI);
+      
       setHasMinted(true);
-      
-      // 4. Get NFT details
-      const tokenId = await contract.tokenCounter() - 1;
-      const tokenURI = await contract.tokenURI(tokenId);
-      
-      setNftDetails({
-        tokenId,
-        tokenURI,
-        owner: account
-      });
+      setCurrentDataURI(dataURI);
+      setMetadataURI(metadataURI);
+      alert("Medical Record NFT minted successfully!");
 
-    } catch (err) {
-      console.error("Minting error:", err);
-      setError(err.message || "Failed to mint NFT");
+    } catch (error) {
+      console.error("Minting error:", error);
+      setError(error.message || "Failed to mint NFT");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  return (
-    <div className="nft-minter">
-      <h2>Mint Your EHR NFT</h2>
+  const handleUpdate = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      if (!ehrData.name || !ehrData.birthDate) {
+        throw new Error("Name and birth date are required");
+      }
+  
+      // 1. Pin new medical data
+      const medicalData = {
+        ...ehrData,
+        timestamp: new Date().toISOString(),
+        owner: account
+      };
+      const dataResult = await pinToIPFS(medicalData);
       
-      {hasMinted ? (
-        <div className="mint-success">
-          <h3>✅ Successfully Minted NFT!</h3>
-          {nftDetails && (
-            <div className="nft-details">
-              <p><strong>Token ID:</strong> {nftDetails.tokenId.toString()}</p>
-              <p><strong>Owner:</strong> {nftDetails.owner}</p>
-              <p>
-                <strong>IPFS Metadata:</strong> 
-                <a href={nftDetails.tokenURI} target="_blank" rel="noopener noreferrer">
-                  View Metadata
+      // Validate the IPFS hash exists
+      if (!dataResult.IpfsHash) {
+        throw new Error("Failed to get IPFS hash for medical data");
+      }
+      
+      const newDataURI = `ipfs://${dataResult.IpfsHash}`;
+  
+      // 2. Create and pin new metadata
+      const metadata = createMetadata(ehrData, newDataURI);
+      const metadataResult = await pinToIPFS(metadata);
+      
+      // Validate the metadata IPFS hash exists
+      if (!metadataResult.IpfsHash) {
+        throw new Error("Failed to get IPFS hash for metadata");
+      }
+      
+      const newMetadataURI = `ipfs://${metadataResult.IpfsHash}`;
+
+      // 3. Update contract
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(
+        EHR_NFTConfig.address,
+        EHR_NFTConfig.abi,
+        signer
+      );
+
+      const tokenId = await contract.getTokenId(account);
+      await contract.updateDataURI(tokenId, newDataURI);
+      await contract.setMetadataURI(tokenId, newMetadataURI);
+
+      // Refresh UI
+      const medicalRecord = await contract.getMedicalRecord(tokenId);
+      setCurrentDataURI(medicalRecord.dataURI);
+      setMetadataURI(medicalRecord.metadataURI);
+      setHistoryURIs(medicalRecord.historyURIs);
+      setIsUpdating(false);
+      
+      alert('Record updated successfully!');
+    } catch (error) {
+      console.error("Update error:", error);
+      setError(error.message || "Failed to update record");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const viewHistoricalRecord = async (uri) => {
+    try {
+      setIsLoading(true);
+      await fetchEHRData(uri);
+    } catch (error) {
+      setError('Failed to load historical record: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (hasMinted) {
+    return (
+      <div className="minting-container">
+        <h2>Medical Record NFT</h2>
+        
+        {isUpdating ? (
+          <>
+            <div className="form-group">
+              <label>Patient Information</label>
+              <input
+                name="name"
+                value={ehrData.name}
+                onChange={handleInputChange}
+                placeholder="Full Name"
+                required
+              />
+              <input
+                type="date"
+                name="birthDate"
+                value={ehrData.birthDate}
+                onChange={handleInputChange}
+                placeholder="Date of Birth"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Medical Information</label>
+              <select 
+                name="bloodType" 
+                value={ehrData.bloodType} 
+                onChange={handleInputChange}
+              >
+                <option value="">Select Blood Type</option>
+                <option value="A+">A+</option>
+                <option value="A-">A-</option>
+                <option value="B+">B+</option>
+                <option value="B-">B-</option>
+                <option value="AB+">AB+</option>
+                <option value="AB-">AB-</option>
+                <option value="O+">O+</option>
+                <option value="O-">O-</option>
+              </select>
+              <textarea
+                name="conditions"
+                value={ehrData.conditions}
+                onChange={handleInputChange}
+                placeholder="Known medical conditions"
+                rows={3}
+              />
+              <textarea
+                name="medications"
+                value={ehrData.medications}
+                onChange={handleInputChange}
+                placeholder="Current medications"
+                rows={3}
+              />
+            </div>
+
+            {error && <div className="error-message">{error}</div>}
+
+            <div className="button-group">
+              <button 
+                onClick={handleUpdate}
+                disabled={isLoading}
+                className="mint-button"
+              >
+                {isLoading ? 'Saving...' : 'Save New Version'}
+              </button>
+              <button 
+                onClick={() => setIsUpdating(false)}
+                disabled={isLoading}
+                className="cancel-button"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="record-display">
+              <h3>Patient Information</h3>
+              <p><strong>Name:</strong> {ehrData.name}</p>
+              <p><strong>Date of Birth:</strong> {ehrData.birthDate}</p>
+              
+              <h3>Medical Information</h3>
+              <p><strong>Blood Type:</strong> {ehrData.bloodType || 'Not specified'}</p>
+              <p><strong>Conditions:</strong> {ehrData.conditions || 'None reported'}</p>
+              <p><strong>Medications:</strong> {ehrData.medications || 'None reported'}</p>
+              
+              <p className="ipfs-link">
+                <strong>Current Version:</strong> 
+                <a href={currentDataURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/')} 
+                   target="_blank" 
+                   rel="noopener noreferrer">
+                  View on IPFS
                 </a>
               </p>
             </div>
-          )}
-          {txHash && (
-            <p className="tx-hash">
-              <strong>Transaction:</strong> 
-              <a 
-                href={`https://etherscan.io/tx/${txHash}`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-              >
-                View on Etherscan
-              </a>
-            </p>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="mint-form">
-            <div className="form-group">
-              <label>Patient Name</label>
-              <input
-                type="text"
-                name="patientName"
-                value={formData.patientName}
-                onChange={handleInputChange}
-                placeholder="John Doe"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Diagnosis</label>
-              <input
-                type="text"
-                name="diagnosis"
-                value={formData.diagnosis}
-                onChange={handleInputChange}
-                placeholder="Condition or diagnosis"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Treatment</label>
-              <textarea
-                name="treatment"
-                value={formData.treatment}
-                onChange={handleInputChange}
-                placeholder="Treatment plan or notes"
-                rows="3"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Date</label>
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                onChange={handleInputChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Encrypted Data (Base64)</label>
-              <textarea
-                name="encryptedData"
-                value={formData.encryptedData}
-                onChange={handleInputChange}
-                placeholder="Paste encrypted EHR data here"
-                rows="5"
-              />
-            </div>
 
             <button 
-              onClick={mintNFT}
-              disabled={loading || !account}
-              className="mint-button"
+              onClick={() => setIsUpdating(true)}
+              className="edit-button"
             >
-              {loading ? 'Minting...' : 'Mint EHR NFT'}
+              Update Medical Record
             </button>
-          </div>
 
-          {error && (
-            <div className="error-message">
-              <p>Error: {error}</p>
-            </div>
-          )}
-        </>
-      )}
+            {historyURIs.length > 0 && (
+              <div className="version-history">
+                <h3>Previous Versions</h3>
+                <ul>
+                  {historyURIs.map((uri, index) => (
+                    <li key={index}>
+                      <a 
+                        href="#" 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          viewHistoricalRecord(uri);
+                        }}
+                      >
+                        Version {historyURIs.length - index}
+                      </a>
+                      <span className="view-ipfs">
+                        (<a 
+                          href={uri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/')} 
+                          target="_blank" 
+                          rel="noopener noreferrer">
+                          View on IPFS
+                        </a>)
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="minting-container">
+      <h2>Create Medical Record NFT</h2>
+      
+      <div className="form-group">
+        <label>Patient Information</label>
+        <input
+          name="name"
+          value={ehrData.name}
+          onChange={handleInputChange}
+          placeholder="Full Name"
+          required
+        />
+        <input
+          type="date"
+          name="birthDate"
+          value={ehrData.birthDate}
+          onChange={handleInputChange}
+          placeholder="Date of Birth"
+          required
+        />
+      </div>
+
+      <div className="form-group">
+        <label>Medical Information</label>
+        <select 
+          name="bloodType" 
+          value={ehrData.bloodType} 
+          onChange={handleInputChange}
+        >
+          <option value="">Select Blood Type</option>
+          <option value="A+">A+</option>
+          <option value="A-">A-</option>
+          <option value="B+">B+</option>
+          <option value="B-">B-</option>
+          <option value="AB+">AB+</option>
+          <option value="AB-">AB-</option>
+          <option value="O+">O+</option>
+          <option value="O-">O-</option>
+        </select>
+        <textarea
+          name="conditions"
+          value={ehrData.conditions}
+          onChange={handleInputChange}
+          placeholder="Known medical conditions"
+          rows={3}
+        />
+        <textarea
+          name="medications"
+          value={ehrData.medications}
+          onChange={handleInputChange}
+          placeholder="Current medications"
+          rows={3}
+        />
+      </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <button 
+        onClick={handleMint}
+        disabled={isLoading}
+        className="mint-button"
+      >
+        {isLoading ? 'Creating Record...' : 'Create Medical Record NFT'}
+      </button>
+
+      <div className="info-note">
+        <p>Your medical data will be securely stored on IPFS and linked to an NFT.</p>
+        <p>Each update creates a new version while preserving previous versions.</p>
+      </div>
     </div>
   );
 };
 
-export default NFTMinter;
+export default Minting;

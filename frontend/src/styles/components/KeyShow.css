@@ -1,0 +1,56 @@
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  
+  .modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: auto;
+    overflow-y: auto;
+  }
+  
+  .key-display textarea {
+    width: 100%;
+    min-height: auto;
+    margin-bottom: 1rem;
+    font-family: monospace;
+  }
+  
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+  }
+  .key-display pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.key-description {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 0.5em;
+    font-style: italic;
+}
+
+.private-key-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}

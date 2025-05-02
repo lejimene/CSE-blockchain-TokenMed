@@ -75,6 +75,28 @@
   cursor: pointer;
 }
 
+.key-status {
+  background: #f0f9ff;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.security-note {
+  color: #4b5563;
+  margin-bottom: 15px;
+}
+
+.security-warning {
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin-top: 10px;
+}
+
+.key-strength meter {
+  margin: 0 10px;
+  width: 100px;
+}
+
 .grant-btn:disabled, .revoke-btn:disabled, .refresh-btn:disabled, .dismiss-btn:disabled {
   background-color: #dcdcdc;
   cursor: not-allowed;

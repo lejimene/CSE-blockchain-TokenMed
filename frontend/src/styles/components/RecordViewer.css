@@ -1,0 +1,201 @@
+.record-viewer {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.record-viewer h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.record-display, .history-view {
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.record-section {
+    margin-bottom: 20px;
+}
+
+.record-section h3, .record-section h4 {
+    color: #3498db;
+    margin-bottom: 10px;
+}
+
+.record-section p {
+    margin: 8px 0;
+    line-height: 1.5;
+}
+
+.record-actions {
+    display: flex;
+    justify-content: center;
+    margin: 20px 0;
+}
+
+.edit-button, .back-button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+}
+
+.edit-button:hover, .back-button:hover {
+    background-color: #2980b9;
+}
+
+.version-history {
+    margin-top: 30px;
+}
+
+.version-history h3 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+.version-history ul {
+    list-style: none;
+    padding: 0;
+}
+
+.version-history li {
+    margin-bottom: 10px;
+}
+
+.version-button {
+    background: none;
+    border: none;
+    color: #3498db;
+    cursor: pointer;
+    text-align: left;
+    padding: 5px 0;
+    width: 100%;
+    transition: color 0.3s;
+}
+
+.version-button:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
+/* Form Styles */
+.record-form {
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 6px;
+}
+
+.form-section {
+    margin-bottom: 20px;
+}
+
+.form-section h3 {
+    color: #3498db;
+    margin-bottom: 15px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.form-group textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.save-button {
+    background-color: #27ae60;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.save-button:hover {
+    background-color: #219653;
+}
+
+.cancel-button {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.cancel-button:hover {
+    background-color: #c0392b;
+}
+
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.error-message button {
+    background: none;
+    border: none;
+    color: #721c24;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .record-viewer {
+        padding: 15px;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .save-button, .cancel-button {
+        width: 100%;
+    }
+}
