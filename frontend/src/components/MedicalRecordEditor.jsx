@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { ethers } from "ethers";
 import { EHR_NFTConfig } from "../contracts/contracts-config";
-import "../styles/components/MedicalRecordEditor.css";
 import { API_CONFIG } from '../config/api';
+import "../styles/components/MedicalRecordEditor.css";
 
-const MedicalRecordEditor = ({ tokenId, patientAddress, onRecordUpdated }) => {
+const MedicalRecordEditor = ({ tokenId, patientAddress, ehrData, onRecordUpdated }) => {
+
+    if (!ehrData) {
+        return <div>Loading medical record...</div>;
+    }
+
     const [formData, setFormData] = useState({
-        diagnosis: "",
-        prescription: "",
+        conditions: ehrData.conditions || "",
+        medications: ehrData.medications || "",
+        bloodType: ehrData.bloodType || "",
         notes: ""
     });
+
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -17,52 +24,77 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, onRecordUpdated }) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const validateRecordData = (data) => {
-        if (!data.diagnosis || !data.prescription) {
-            throw new Error("Diagnosis and prescription are required");
+    const validateInput = () => {
+        const { conditions, medications, bloodType, notes } = formData;
+        if (!conditions || !medications || !bloodType) {
+            throw new Error("Conditions, medications, and blood type are required.");
         }
-        if (data.diagnosis.length > 500 || data.prescription.length > 500 || data.notes?.length > 2000) {
-            throw new Error("Input exceeds maximum length");
+        if (
+            conditions.length > 500 ||
+            medications.length > 500 ||
+            bloodType.length > 10 ||
+            notes.length > 2000
+        ) {
+            throw new Error("One or more fields exceed allowed length.");
         }
     };
 
-    const uploadToIPFS = async (recordData) => {
-        try {
-            validateRecordData(recordData);
+    const pinToIPFS = async (data) => {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-wallet-address': patientAddress || 'unknown',
+            },
+            body: JSON.stringify(data)
+        });
 
-            const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-wallet-address": patientAddress,
-                },
-                body: JSON.stringify({
-                    record: {
-                        ...recordData,
-                        updatedAt: new Date().toISOString(),
-                        patientAddress
-                    }
-                })
-            });
-        
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || "Failed to pin JSON to IPFS");
-            }
+        const result = await response.json();
 
-            const result = await response.json();
-            
-            // Handle both response formats
-            const ipfsHash = result.IpfsHash || result.ipfsHash;
-            if (!ipfsHash) {
-                throw new Error("Invalid IPFS response - missing hash");
-            }
-
-            return `ipfs://${ipfsHash}`;
-        } catch (error) {
-            console.error("IPFS Upload Error:", error);
-            throw new Error(`IPFS upload failed: ${error.message}`);
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to pin to IPFS');
         }
+
+        return `ipfs://${result.IpfsHash}`;
+    };
+
+    const uploadUpdatedRecord = async () => {
+        validateInput();
+
+        const updatedRecord = {
+            ...ehrData,
+            ...formData,
+            updatedAt: new Date().toISOString()
+        };
+
+        const dataURI = await pinToIPFS(updatedRecord);
+
+        const metadata = {
+            name: `Medical Record for ${ehrData.name}`,
+            description: `EHR - Updated ${new Date().toISOString()}`,
+            image: "ipfs://static-ehr-image", // Update with actual image URI
+            external_url: "https://ehr-platform.example.com", // Update accordingly
+            attributes: [
+                { trait_type: "Blood Type", value: formData.bloodType },
+                { trait_type: "Record Type", value: "Medical EHR" }
+            ],
+            properties: {
+                patient_data: {
+                    name: ehrData.name,
+                    birthDate: ehrData.birthDate,
+                    bloodType: formData.bloodType,
+                    conditions: formData.conditions,
+                    medications: formData.medications,
+                    notes: formData.notes,
+                    ipfs: dataURI,
+                    timestamp: new Date().toISOString()
+                }
+            }
+        };
+
+        const metadataURI = await pinToIPFS(metadata);
+
+        return { dataURI, metadataURI };
     };
 
     const handleSubmit = async (e) => {
@@ -71,54 +103,29 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, onRecordUpdated }) => {
         setError(null);
 
         try {
-            if (!tokenId) throw new Error("No token ID provided");
-            if (!patientAddress) throw new Error("Patient address required");
-            
+            if (!tokenId || !patientAddress) {
+                throw new Error("Token ID and patient address are required");
+            }
+
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const ehrContract = new ethers.Contract(
-                EHR_NFTConfig.address,
-                EHR_NFTConfig.abi,
-                signer
-            );
+            const contract = new ethers.Contract(EHR_NFTConfig.address, EHR_NFTConfig.abi, signer);
 
-            // Verify the doctor still has access
-            const hasAccess = await ehrContract.hasAccess(patientAddress, await signer.getAddress());
+            const hasAccess = await contract.hasAccess(patientAddress, await signer.getAddress());
             if (!hasAccess) {
-                throw new Error("You no longer have access to update this record");
+                throw new Error("Access denied to update this record.");
             }
 
-            const recordData = {
-                ...formData,
-                updatedBy: await signer.getAddress(),
-                timestamp: new Date().toISOString()
-            };
+            const { dataURI, metadataURI } = await uploadUpdatedRecord();
 
-            const newRecordURI = await uploadToIPFS(recordData);
+            await contract.updateDataURI(tokenId, dataURI);
+            await contract.setMetadataURI(tokenId, metadataURI);
 
-            // Validate the URI before sending to blockchain
-            if (!newRecordURI.startsWith('ipfs://') || newRecordURI.includes('undefined')) {
-                throw new Error("Invalid IPFS URI generated");
-            }
-
-            const tx = await ehrContract.updateEHR(tokenId, newRecordURI);
-            const receipt = await tx.wait();
-
-            if (receipt.status !== 1) {
-                throw new Error("Transaction failed");
-            }
-
-            // Clear form on success
-            setFormData({
-                diagnosis: "",
-                prescription: "",
-                notes: ""
-            });
-
+            setFormData({ ...formData, notes: "" });
             onRecordUpdated?.();
         } catch (err) {
-            console.error("Record update failed:", err);
-            setError(err.reason || err.message || "Failed to update record");
+            console.error(err);
+            setError(err.message || "Update failed");
         } finally {
             setUploading(false);
         }
@@ -126,59 +133,66 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, onRecordUpdated }) => {
 
     return (
         <div className="record-editor">
-            <h3>Update Medical Record</h3>
+            <h3>Edit Medical Information</h3>
+
             {error && (
                 <div className="error-message">
                     <p>{error}</p>
                     <button onClick={() => setError(null)}>Dismiss</button>
                 </div>
             )}
-            
+
             <form onSubmit={handleSubmit}>
                 <div className="form-group">
-                    <label>Diagnosis*</label>
-                    <input 
-                        name="diagnosis" 
-                        onChange={handleChange} 
-                        value={formData.diagnosis} 
-                        required 
+                    <label>Conditions*</label>
+                    <input
+                        name="conditions"
+                        value={formData.conditions}
+                        onChange={handleChange}
                         maxLength={500}
+                        required
                     />
                 </div>
 
                 <div className="form-group">
-                    <label>Prescription*</label>
-                    <input 
-                        name="prescription" 
-                        onChange={handleChange} 
-                        value={formData.prescription} 
-                        required 
+                    <label>Medications*</label>
+                    <input
+                        name="medications"
+                        value={formData.medications}
+                        onChange={handleChange}
                         maxLength={500}
+                        required
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label>Blood Type*</label>
+                    <input
+                        name="bloodType"
+                        value={formData.bloodType}
+                        onChange={handleChange}
+                        maxLength={10}
+                        required
                     />
                 </div>
 
                 <div className="form-group">
                     <label>Notes</label>
-                    <textarea 
-                        name="notes" 
-                        onChange={handleChange} 
-                        value={formData.notes} 
+                    <textarea
+                        name="notes"
+                        value={formData.notes}
+                        onChange={handleChange}
                         maxLength={2000}
                         rows={4}
                     />
                 </div>
 
-                <button 
-                    type="submit" 
-                    disabled={uploading || !formData.diagnosis || !formData.prescription}
+                <button
+                    type="submit"
                     className="submit-button"
+                    disabled={uploading}
                 >
-                    {uploading ? (
-                        <>
-                            <span className="spinner"></span>
-                            Updating...
-                        </>
-                    ) : "Submit Update"}
+                    {uploading ? "Updating..." : "Submit Update"}
                 </button>
             </form>
         </div>

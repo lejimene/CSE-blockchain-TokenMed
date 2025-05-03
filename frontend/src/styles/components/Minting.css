@@ -24,3 +24,97 @@
   .tab-btn {
     margin: 15px;
   }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  
+  .modal {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+  }
+  
+  .manual-import-guide {
+    margin-top: 1rem;
+  }
+  
+  .manual-import-guide ol {
+    text-align: left;
+    margin: 1rem 0;
+  }
+  
+  .manual-import-guide code {
+    background: #f0f0f0;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  
+  .close-button {
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .manual-import-guide {
+    margin-top: 1.5rem;
+    text-align: left;
+  }
+  
+  .import-section {
+    margin: 1rem 0;
+  }
+  
+  .copy-box {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+  }
+  
+  .copy-box input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #f8f8f8;
+  }
+  
+  .copy-box button {
+    padding: 0.5rem 1rem;
+    background: #4e44ce;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .import-steps {
+    background: #f0f0f0;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1.5rem 0;
+  }
+  
+  .import-steps ol {
+    margin: 0.5rem 0 0 1rem;
+    padding-left: 1rem;
+  }
+  
+  .import-steps li {
+    margin-bottom: 0.5rem;
+  }

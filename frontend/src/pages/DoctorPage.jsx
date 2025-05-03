@@ -306,19 +306,22 @@ const DoctorPage = () => {
                             </div>
                         )}
                     </section>
-                    <section className="editor-section">
-                    <MedicalRecordEditor 
-                        tokenId={tokenId} 
-                        patientAddress={selectedPatient}
-                        onRecordUpdated={async () => {
-                            const provider = new ethers.BrowserProvider(window.ethereum);
-                            const signer = await provider.getSigner();
-                            await initializeContracts(provider, signer).then(({ ehrContract, accessControllerContract }) => {
-                                fetchPatientRecord(ehrContract, accessControllerContract, selectedPatient);
-                            });
-                        }}
-                    />
-                    </section>
+                    {selectedPatient && patientRecord && (
+                        <section className="editor-section">
+                            <MedicalRecordEditor 
+                                tokenId={tokenId} 
+                                patientAddress={selectedPatient}
+                                ehrData={patientRecord}
+                                onRecordUpdated={async () => {
+                                    const provider = new ethers.BrowserProvider(window.ethereum);
+                                    const signer = await provider.getSigner();
+                                    await initializeContracts(provider, signer).then(({ ehrContract, accessControllerContract }) => {
+                                        fetchPatientRecord(ehrContract, accessControllerContract, selectedPatient);
+                                    });
+                                }}
+                            />
+                        </section>
+                        )}
 
                     {error && (
                         <div className="error-message">

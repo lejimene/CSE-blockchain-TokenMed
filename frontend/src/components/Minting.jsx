@@ -3,8 +3,10 @@ import { ethers } from 'ethers';
 import { EHR_NFTConfig } from '../contracts/contracts-config';
 import { API_CONFIG } from '../config/api';
 import "../styles/components/Minting.css";
+
 const CONSTANT_IPFS_IMAGE_URI = "ipfs://bafybeib6a6drnuvjpwhsbnd6nbvuqshmmiwjifxcmmj4obsy3zkg6uhc6e";
-const PLATFORM_EXTERNAL_URL = "https://your-ehr-platform.com";
+const PINATA_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
+const PLATFORM_EXTERNAL_URL = "http://localhost:5173/patient";
 
 const Minting = ({ account }) => {
   const [ehrData, setEhrData] = useState({
@@ -21,6 +23,9 @@ const Minting = ({ account }) => {
   const [metadataURI, setMetadataURI] = useState('');
   const [historyURIs, setHistoryURIs] = useState([]);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [mintedTokenId, setMintedTokenId] = useState(null);
+  const [showManualImportGuide, setShowManualImportGuide] = useState(false);
 
   // Check minted status and fetch existing data
   useEffect(() => {
@@ -52,6 +57,7 @@ const Minting = ({ account }) => {
         }
       }
     };
+    
     checkMintedStatus();
   }, [account]);
 
@@ -63,15 +69,13 @@ const Minting = ({ account }) => {
   
     try {
       let gatewayUrl = uri.startsWith('ipfs://') 
-        ? `https://gateway.pinata.cloud/ipfs/${uri.split('ipfs://')[1]}`
-        : `https://gateway.pinata.cloud/ipfs/${uri}`;
+        ? `${PINATA_GATEWAY}${uri.split('ipfs://')[1]}`
+        : `${PINATA_GATEWAY}${uri}`;
     
       const response = await fetch(gatewayUrl);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   
       const data = await response.json();
-      
-      // Handle both old and new data structures
       const patientData = data.properties?.patient_data || data;
       
       setEhrData({
@@ -86,45 +90,43 @@ const Minting = ({ account }) => {
       setError('Failed to load medical record: ' + error.message);
     }
   };
-  
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setEhrData(prev => ({ ...prev, [name]: value }));
   };
 
-const pinToIPFS = async (data, isUpdate = false) => {
-  try {
-    const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}?isUpdate=${isUpdate}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-wallet-address': data.walletAddress || account || 'unknown',
-      },
-      body: JSON.stringify(data),
-    });
+  const pinToIPFS = async (data, isUpdate = false) => {
+    try {
+      const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.pinJson}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-wallet-address': account || 'unknown',
+        },
+        body: JSON.stringify(data),
+      });
 
-    const result = await response.json();
+      const result = await response.json();
 
-    if (!response.ok || !result.success) {
-      throw new Error(result.error || 'IPFS pinning failed');
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'IPFS pinning failed');
+      }
+
+      const ipfsHash = result.IpfsHash || result.ipfsHash;
+      if (!ipfsHash) {
+        throw new Error('No IPFS hash received in response');
+      }
+
+      return {
+        ...result,
+        IpfsHash: ipfsHash
+      };
+    } catch (error) {
+      console.error('IPFS Pinning error:', error);
+      throw new Error(`Error pinning to IPFS: ${error.message}`);
     }
-
-    // Handle both response formats (IpfsHash or ipfsHash)
-    const ipfsHash = result.IpfsHash || result.ipfsHash;
-    if (!ipfsHash) {
-      throw new Error('No IPFS hash received in response');
-    }
-
-    return {
-      ...result,
-      IpfsHash: ipfsHash  // Ensure consistent property name
-    };
-  } catch (error) {
-    console.error('IPFS Pinning error:', error);
-    throw new Error(`Error pinning to IPFS: ${error.message}`);
-  }
-};
+  };
 
   const createMetadata = (ehrData, dataURI) => ({
     name: `Medical Record for ${ehrData.name}`,
@@ -136,17 +138,52 @@ const pinToIPFS = async (data, isUpdate = false) => {
       { trait_type: "Blood Type", value: ehrData.bloodType || "Unknown" }
     ],
     properties: {
-      patient_data: {  // Changed from encrypted_data to patient_data
+      patient_data: {
         name: ehrData.name,
         birthDate: ehrData.birthDate,
         bloodType: ehrData.bloodType,
         conditions: ehrData.conditions,
         medications: ehrData.medications,
-        ipfs: dataURI,  // This should now be properly set
+        ipfs: dataURI,
         timestamp: new Date().toISOString()
       }
     }
   });
+
+  const addNFTToMetaMask = async (contractAddress, tokenId) => {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC721',
+          options: {
+            address: contractAddress,
+            tokenId: tokenId,
+            symbol: 'EHR',
+            name: 'MedicalRecord',
+            image: CONSTANT_IPFS_IMAGE_URI.replace('ipfs://', PINATA_GATEWAY),
+          },
+        },
+      });
+      return true;
+    } catch (error) {
+      console.error('Error adding NFT:', error);
+      return false;
+    }
+  };
+
+  const handleCloseSuccessModal = () => {
+    setShowSuccessModal(false);
+    if (!showManualImportGuide) {
+      window.location.reload();
+    }
+  };
+
+  const handleCloseManualGuide = () => {
+    setShowManualImportGuide(false);
+    setShowSuccessModal(false);
+    window.location.reload();
+  };
 
   const handleMint = async () => {
     setIsLoading(true);
@@ -166,7 +203,7 @@ const pinToIPFS = async (data, isUpdate = false) => {
       const dataResult = await pinToIPFS(medicalData);
       const dataURI = `ipfs://${dataResult.IpfsHash}`;
   
-      // 2. Create and pin metadata (with proper dataURI)
+      // 2. Create and pin metadata
       const metadata = createMetadata(ehrData, dataURI);
       const metadataResult = await pinToIPFS(metadata);
       const metadataURI = `ipfs://${metadataResult.IpfsHash}`;
@@ -181,15 +218,41 @@ const pinToIPFS = async (data, isUpdate = false) => {
       );
 
       const tx = await contract.mint(metadataURI);
-      await tx.wait();
-      
-      const tokenId = await contract.getTokenId(account);
+      const receipt = await tx.wait();
+
+      // 4. Extract tokenId from transaction logs
+      let tokenId;
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = contract.interface.parseLog(log);
+          if (parsedLog && parsedLog.name === "NFTMinted") {
+            tokenId = parsedLog.args.tokenId.toString();
+            break;
+          }
+        } catch {}
+      }
+
+      if (!tokenId) {
+        throw new Error("Could not determine tokenId from transaction");
+      }
+
+      // 5. Update data URI and add to MetaMask
       await contract.updateDataURI(tokenId, dataURI);
+      setMintedTokenId(tokenId);
+      setShowSuccessModal(true);
       
+      const added = await addNFTToMetaMask(EHR_NFTConfig.address, tokenId);
+      if (added) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+      } else {
+        setShowManualImportGuide(true);
+      }
+
       setHasMinted(true);
       setCurrentDataURI(dataURI);
       setMetadataURI(metadataURI);
-      alert("Medical Record NFT minted successfully!");
 
     } catch (error) {
       console.error("Minting error:", error);
@@ -214,24 +277,12 @@ const pinToIPFS = async (data, isUpdate = false) => {
         timestamp: new Date().toISOString(),
         owner: account
       };
-      const dataResult = await pinToIPFS(medicalData);
-      
-      // Validate the IPFS hash exists
-      if (!dataResult.IpfsHash) {
-        throw new Error("Failed to get IPFS hash for medical data");
-      }
-      
+      const dataResult = await pinToIPFS(medicalData, true);
       const newDataURI = `ipfs://${dataResult.IpfsHash}`;
   
       // 2. Create and pin new metadata
       const metadata = createMetadata(ehrData, newDataURI);
-      const metadataResult = await pinToIPFS(metadata);
-      
-      // Validate the metadata IPFS hash exists
-      if (!metadataResult.IpfsHash) {
-        throw new Error("Failed to get IPFS hash for metadata");
-      }
-      
+      const metadataResult = await pinToIPFS(metadata, true);
       const newMetadataURI = `ipfs://${metadataResult.IpfsHash}`;
 
       // 3. Update contract
@@ -410,6 +461,47 @@ const pinToIPFS = async (data, isUpdate = false) => {
               </div>
             )}
           </>
+        )}
+
+        {showSuccessModal && (
+          <div className="modal-overlay">
+            <div className="modal">
+              <h3>🎉 NFT Minted Successfully!</h3>
+              <p>Your medical record NFT has been created.</p>
+              
+              {showManualImportGuide ? (
+                <div className="manual-import-guide">
+                  <h4>Don't see your NFT in MetaMask?</h4>
+                  <ol>
+                    <li>Open MetaMask</li>
+                    <li>Go to the "NFTs" tab</li>
+                    <li>Click "Import NFTs"</li>
+                    <li>
+                      Enter: <br />
+                      Contract: <code>{EHR_NFTConfig.address}</code><br />
+                      Token ID: <code>{mintedTokenId}</code>
+                    </li>
+                  </ol>
+                  <button 
+                    className="close-button"
+                    onClick={handleCloseManualGuide}
+                  >
+                    I've Imported It - Refresh
+                  </button>
+                </div>
+              ) : (
+                <div className="auto-success">
+                  <p>Your NFT should appear in MetaMask shortly...</p>
+                  <button 
+                    className="close-button"
+                    onClick={handleCloseSuccessModal}
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     );

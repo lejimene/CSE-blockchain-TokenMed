@@ -157,6 +157,7 @@ const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
                     <div className="record-display">
                         <div className="record-section">
                             <h3>Patient Information</h3>
+                            <h2>Patient</h2>
                             <p><strong>Name:</strong> {currentRecord.name}</p>
                             <p><strong>Date of Birth:</strong> {currentRecord.birthDate}</p>
                         </div>
@@ -187,7 +188,7 @@ const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
                 <div className="version-history">
                     <h3>Version History</h3>
                     <ul>
-                    {[...history].reverse().map((uri, index) => (
+                    {[...history].map((uri, index) => (
                         <li key={index}>
                             <button className="version-button" onClick={async () => {
                                 try {

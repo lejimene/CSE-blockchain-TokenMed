@@ -275,7 +275,7 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-container">
-      <h1>Healthcare Access Portal</h1>
+      <h1>MedToken Access Portal</h1>
       
       {error && (
         <div className="error-message">

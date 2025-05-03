@@ -45,9 +45,17 @@
 
 .doctor-main {
     display: flex;
-    gap: 30px;
-    justify-content: space-between;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 2rem;
+    padding: 2rem;
+  }
+  .patients-section,
+.record-section,
+.editor-section {
+  background-color: #fff;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .access-section,
@@ -58,7 +66,7 @@
     padding: 20px;
     flex: 1;
     min-width: 320px;
-    max-width: 48%;
+    max-width: 52dvw;
 }
 
 .patient-item {
@@ -102,7 +110,30 @@
 .remove-btn {
     margin-left: 10px;
 }
-
+@media (min-width: 1024px) {
+    .doctor-main {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      grid-template-rows: auto auto;
+      gap: 2rem;
+      grid-template-areas:
+        "patients record"
+        "patients editor";
+    }
+  
+    .patients-section {
+      grid-area: patients;
+    }
+  
+    .record-section {
+      grid-area: record;
+    }
+  
+    .editor-section {
+      grid-area: editor;
+    }
+  }
+  
 
 @media (max-width: 808px) {
     .doctor-header {
