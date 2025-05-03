@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ethers } from "ethers";
-import { EHR_NFTConfig } from "../contracts/contracts-config";
+import { EHR_NFTConfig, PatientDoctorAccessControllerConfig } from "../contracts/contracts-config";
 import { API_CONFIG } from '../config/api';
 import "../styles/components/MedicalRecordEditor.css";
 
@@ -98,6 +98,7 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, ehrData, onRecordUpdated
     };
 
     const handleSubmit = async (e) => {
+        
         e.preventDefault();
         setUploading(true);
         setError(null);
@@ -109,17 +110,19 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, ehrData, onRecordUpdated
 
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(EHR_NFTConfig.address, EHR_NFTConfig.abi, signer);
-
-            const hasAccess = await contract.hasAccess(patientAddress, await signer.getAddress());
+            const ehrContract = new ethers.Contract(EHR_NFTConfig.address, EHR_NFTConfig.abi, signer);
+            const accessContract = new ethers.Contract(PatientDoctorAccessControllerConfig.address, PatientDoctorAccessControllerConfig.abi, signer);
+            
+            const hasAccess = await accessContract.hasAccess(patientAddress, await signer.getAddress());
+            
             if (!hasAccess) {
                 throw new Error("Access denied to update this record.");
             }
 
             const { dataURI, metadataURI } = await uploadUpdatedRecord();
 
-            await contract.updateDataURI(tokenId, dataURI);
-            await contract.setMetadataURI(tokenId, metadataURI);
+            await ehrContract.updateDataURI(tokenId, dataURI);
+            await ehrContract.setMetadataURI(tokenId, metadataURI);
 
             setFormData({ ...formData, notes: "" });
             onRecordUpdated?.();
