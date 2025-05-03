@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import pinataSDK from '@pinata/sdk';
 import { v4 as uuidv4 } from 'uuid';
+import { ethers } from 'ethers';
+
 
 dotenv.config();
 const app = express();
@@ -10,6 +12,29 @@ const pinata = new pinataSDK(
   process.env.PINATA_API_KEY, 
   process.env.PINATA_SECRET_API_KEY
 );
+
+
+const infuraProvider = new ethers.InfuraProvider(
+  'sepolia', // or 'mainnet'
+  process.env.INFURA_API_KEY
+);
+
+app.get('/api/verify-role/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const contract = new ethers.Contract(
+      process.env.CONTRACT_ADDRESS, // From .env
+      userRegistryConfig.abi,       // Import your ABI
+      infuraProvider
+    );
+    
+    const role = await contract.getRole(address);
+    res.json({ role: role.toString() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to verify role' });
+  }
+});
+
 
 // Enhanced CORS configuration
 app.use(cors({

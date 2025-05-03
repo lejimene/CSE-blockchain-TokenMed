@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { EHR_NFTConfig } from '../contracts/contracts-config';
 import { API_CONFIG } from '../config/api';
 import "../styles/components/Minting.css";
+import { getProvider, getSigner } from "../web3Provider";
 
 const CONSTANT_IPFS_IMAGE_URI = "ipfs://bafybeib6a6drnuvjpwhsbnd6nbvuqshmmiwjifxcmmj4obsy3zkg6uhc6e";
 const PINATA_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
@@ -27,16 +28,28 @@ const Minting = ({ account }) => {
   const [mintedTokenId, setMintedTokenId] = useState(null);
   const [showManualImportGuide, setShowManualImportGuide] = useState(false);
 
+  
+
   // Check minted status and fetch existing data
   useEffect(() => {
     const checkMintedStatus = async () => {
       if (account) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
+          const provider = getProvider();
+          const signer = await getSigner();
+          const network = await provider.getNetwork(); // Get the current network
+          
+          // Get contract address for the current network
+          const contractAddress = EHR_NFTConfig[Number(network.chainId)]?.address;
+          const contractABI = EHR_NFTConfig.abi;
+          
+          if (!contractAddress) {
+            throw new Error(`No contract deployed for chain ID ${network.chainId}`);
+          }
+    
           const contract = new ethers.Contract(
-            EHR_NFTConfig.address, 
-            EHR_NFTConfig.abi, 
+            contractAddress, 
+            contractABI, 
             signer
           );
           
@@ -60,6 +73,7 @@ const Minting = ({ account }) => {
     
     checkMintedStatus();
   }, [account]);
+
 
   const fetchEHRData = async (uri) => {
     if (!uri) {
@@ -207,19 +221,27 @@ const Minting = ({ account }) => {
       const metadata = createMetadata(ehrData, dataURI);
       const metadataResult = await pinToIPFS(metadata);
       const metadataURI = `ipfs://${metadataResult.IpfsHash}`;
-
+  
       // 3. Mint NFT with metadata URI
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
+      const provider = getProvider();
+      const signer = await getSigner();
+      const network = await provider.getNetwork();
+      
+      // Get contract address for current network
+      const contractAddress = EHR_NFTConfig[Number(network.chainId)]?.address;
+      if (!contractAddress) {
+        throw new Error(`No contract deployed for chain ID ${network.chainId}`);
+      }
+  
       const contract = new ethers.Contract(
-        EHR_NFTConfig.address,
+        contractAddress,
         EHR_NFTConfig.abi,
         signer
       );
-
+  
       const tx = await contract.mint(metadataURI);
       const receipt = await tx.wait();
-
+  
       // 4. Extract tokenId from transaction logs
       let tokenId;
       for (const log of receipt.logs) {
@@ -231,17 +253,17 @@ const Minting = ({ account }) => {
           }
         } catch {}
       }
-
+  
       if (!tokenId) {
         throw new Error("Could not determine tokenId from transaction");
       }
-
+  
       // 5. Update data URI and add to MetaMask
       await contract.updateDataURI(tokenId, dataURI);
       setMintedTokenId(tokenId);
       setShowSuccessModal(true);
       
-      const added = await addNFTToMetaMask(EHR_NFTConfig.address, tokenId);
+      const added = await addNFTToMetaMask(contractAddress, tokenId);
       if (added) {
         setTimeout(() => {
           window.location.reload();
@@ -249,11 +271,11 @@ const Minting = ({ account }) => {
       } else {
         setShowManualImportGuide(true);
       }
-
+  
       setHasMinted(true);
       setCurrentDataURI(dataURI);
       setMetadataURI(metadataURI);
-
+  
     } catch (error) {
       console.error("Minting error:", error);
       setError(error.message || "Failed to mint NFT");
@@ -261,7 +283,7 @@ const Minting = ({ account }) => {
       setIsLoading(false);
     }
   };
-
+  
   const handleUpdate = async () => {
     setIsLoading(true);
     setError(null);
@@ -284,20 +306,28 @@ const Minting = ({ account }) => {
       const metadata = createMetadata(ehrData, newDataURI);
       const metadataResult = await pinToIPFS(metadata, true);
       const newMetadataURI = `ipfs://${metadataResult.IpfsHash}`;
-
+  
       // 3. Update contract
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
+      const provider = getProvider();
+      const signer = await getSigner();
+      const network = await provider.getNetwork();
+      
+      // Get contract address for current network
+      const contractAddress = EHR_NFTConfig[Number(network.chainId)]?.address;
+      if (!contractAddress) {
+        throw new Error(`No contract deployed for chain ID ${network.chainId}`);
+      }
+  
       const contract = new ethers.Contract(
-        EHR_NFTConfig.address,
+        contractAddress,
         EHR_NFTConfig.abi,
         signer
       );
-
+  
       const tokenId = await contract.getTokenId(account);
       await contract.updateDataURI(tokenId, newDataURI);
       await contract.setMetadataURI(tokenId, newMetadataURI);
-
+  
       // Refresh UI
       const medicalRecord = await contract.getMedicalRecord(tokenId);
       setCurrentDataURI(medicalRecord.dataURI);

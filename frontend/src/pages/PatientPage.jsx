@@ -7,6 +7,8 @@ import NFTMinter from '../components/Minting';
 import RecordViewer from '../components/RecordViewer';
 import { API_CONFIG } from '../config/api';
 
+import { getProvider, getSigner } from "../web3Provider";
+
 const ROLES = {
   UNREGISTERED: 0,
   PATIENT: 1,
@@ -28,26 +30,48 @@ const PatientPage = () => {
     const [tokenId, setTokenId] = useState(null);
 
     const initializeContracts = useCallback(async (provider, signer) => {
-        const userRegistryContract = new ethers.Contract(
-            userRegistryConfig.address,
-            userRegistryConfig.abi,
-            provider
-        );
-
-        const accessControllerContract = new ethers.Contract(
-            PatientDoctorAccessControllerConfig.address,
-            PatientDoctorAccessControllerConfig.abi,
-            signer || provider
-        );
-
-        const ehrContract = new ethers.Contract(
-            EHR_NFTConfig.address,
-            EHR_NFTConfig.abi,
-            signer || provider
-        );
-
-        return { userRegistryContract, accessControllerContract, ehrContract };
-    }, []);
+        try {
+          const network = await provider.getNetwork();
+          console.log("Connected to network:", network.chainId); // Debug logging
+          
+          // Get addresses directly from config - simpler approach
+          const userRegistryAddress = userRegistryConfig[network.chainId]?.address;
+          const accessControllerAddress = PatientDoctorAccessControllerConfig[network.chainId]?.address;
+          const ehrAddress = EHR_NFTConfig[network.chainId]?.address;
+      
+          // Debug log the addresses
+          console.log({
+            userRegistryAddress,
+            accessControllerAddress,
+            ehrAddress
+          });
+      
+          if (!userRegistryAddress || !accessControllerAddress || !ehrAddress) {
+            throw new Error(`Contract addresses not configured for chain ${network.chainId}`);
+          }
+      
+          return {
+            userRegistryContract: new ethers.Contract(
+              userRegistryAddress,
+              userRegistryConfig.abi,
+              signer || provider
+            ),
+            accessControllerContract: new ethers.Contract(
+              accessControllerAddress,
+              PatientDoctorAccessControllerConfig.abi,
+              signer || provider
+            ),
+            ehrContract: new ethers.Contract(
+              ehrAddress,
+              EHR_NFTConfig.abi,
+              signer || provider
+            )
+          };
+        } catch (error) {
+          console.error("Contract initialization failed:", error);
+          throw error; // Re-throw to be caught by the calling function
+        }
+      }, []);
 
     const fetchRecordData = useCallback(async (ehrContract, tokenId) => {
         try {
@@ -80,54 +104,72 @@ const PatientPage = () => {
     useEffect(() => {
         const checkUserRoleAndNFT = async () => {
             try {
-                const { ethereum } = window;
-                
-                if (!ethereum?.isMetaMask) {
-                    alert("Please install MetaMask!");
-                    return navigate("/");
+              const provider = getProvider();
+              if (!provider) {
+                throw new Error("Blockchain provider not available");
+              }
+          
+              // Get signer first - similar to DoctorPage
+              let signer;
+              let address = account;
+              
+              try {
+                signer = provider.getSigner ? await provider.getSigner() : null;
+                if (!signer && window.ethereum) {
+                  await window.ethereum.request({ method: 'eth_requestAccounts' });
+                  signer = provider.getSigner();
                 }
-
-                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-                if (!accounts.length) return navigate("/");
-                
-                setAccount(accounts[0]);
-                const provider = new ethers.BrowserProvider(ethereum);
-                const signer = await provider.getSigner();
-                
-                const { userRegistryContract, ehrContract } = await initializeContracts(provider, signer);
-                
-                // Check role
-                const role = await userRegistryContract.getRole(accounts[0]);
-                const roleNumber = parseInt(role.toString(), 10);
-
-                if (roleNumber !== ROLES.PATIENT) {
-                    alert("Only patients can access this page");
-                    return navigate("/");
+                address = await signer.getAddress();
+                setAccount(address);
+              } catch (signerError) {
+                if (!address) {
+                  throw new Error("Wallet connection required");
                 }
-
-                // Check NFT status
-                const hasMinted = await ehrContract.hasMintedNFT(accounts[0]);
-                setHasNFT(hasMinted);
-                
-                if (hasMinted) {
-                    const tokenId = await ehrContract.getTokenId(accounts[0]);
-                    setTokenId(tokenId);
-                    await fetchRecordData(ehrContract, tokenId);
-                }
-                
+                // Continue in read-only mode if possible
+              }
+          
+              const contracts = await initializeContracts(provider, signer);
+              const { userRegistryContract, ehrContract } = contracts;
+              
+              // Check role
+              const role = await userRegistryContract.getRole(address);
+              const roleNumber = role.toNumber ? role.toNumber() : Number(role);
+          
+              if (roleNumber !== ROLES.PATIENT) {
+                alert("Only patients can access this page");
+                return navigate("/");
+              }
+          
+              // Check NFT status
+              const hasMinted = await ehrContract.hasMintedNFT(address);
+              setHasNFT(hasMinted);
+              
+              if (hasMinted) {
+                const tokenId = await ehrContract.getTokenId(address);
+                setTokenId(tokenId);
+                await fetchRecordData(ehrContract, tokenId);
+              }
+              
+              if (signer) {
                 await fetchActiveDoctors(provider, signer);
+              }
             } catch (error) {
-                console.error("Initialization error:", error);
-                setError(error.message || "Failed to initialize patient dashboard");
+              console.error("Initialization error:", error);
+              setError(error.message || "Failed to initialize patient dashboard");
             } finally {
-                setIsCheckingRole(false);
+              setIsCheckingRole(false);
             }
-        };
+          };
 
         checkUserRoleAndNFT();
     }, [navigate, initializeContracts, fetchRecordData]);
 
     const grantAccess = async () => {
+        if (!window.ethereum) {
+            setError("MetaMask required for this action");
+            return;
+        }
+    
         if (!ethers.isAddress(doctorAddress)) {
             setError("Invalid Ethereum address");
             return;
@@ -136,8 +178,8 @@ const PatientPage = () => {
         setLoading(true);
         setError(null);
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner();
             const { accessControllerContract, userRegistryContract, ehrContract } = await initializeContracts(provider, signer);
 
             const role = await userRegistryContract.getRole(doctorAddress);
@@ -170,8 +212,8 @@ const PatientPage = () => {
         setLoading(true);
         setError(null);
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner();
             const { accessControllerContract } = await initializeContracts(provider, signer);
 
             const isActive = await accessControllerContract.hasAccess(
@@ -198,8 +240,8 @@ const PatientPage = () => {
     const updateRecord = async (newData) => {
         setLoading(true);
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner();
           const { ehrContract } = await initializeContracts(provider, signer);
           
           // Pin new data to IPFS

@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { EHR_NFTConfig, PatientDoctorAccessControllerConfig } from "../contracts/contracts-config";
 import { API_CONFIG } from '../config/api';
 import "../styles/components/MedicalRecordEditor.css";
+import { getProvider, getSigner } from "../web3Provider";
 
 const MedicalRecordEditor = ({ tokenId, patientAddress, ehrData, onRecordUpdated }) => {
 
@@ -98,33 +99,60 @@ const MedicalRecordEditor = ({ tokenId, patientAddress, ehrData, onRecordUpdated
     };
 
     const handleSubmit = async (e) => {
-        
         e.preventDefault();
         setUploading(true);
         setError(null);
-
+    
         try {
             if (!tokenId || !patientAddress) {
                 throw new Error("Token ID and patient address are required");
             }
+    
+            // Get signer (with connected wallet) and instantiate contracts
+            const signer = await getSigner();
+            const signerAddress = await signer.getAddress();
+            const network = await signer.provider.getNetwork();
+    
+            const ehrAddress = EHR_NFTConfig[Number(network.chainId)]?.address;
+            const accessAddress = PatientDoctorAccessControllerConfig[Number(network.chainId)]?.address;
 
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const ehrContract = new ethers.Contract(EHR_NFTConfig.address, EHR_NFTConfig.abi, signer);
-            const accessContract = new ethers.Contract(PatientDoctorAccessControllerConfig.address, PatientDoctorAccessControllerConfig.abi, signer);
-            
-            const hasAccess = await accessContract.hasAccess(patientAddress, await signer.getAddress());
-            
+            if (!ehrAddress || !accessAddress) {
+                throw new Error(`Contracts not deployed on ${getNetworkName(network.chainId)}`);
+            }
+
+            // Instantiate contracts
+            const ehrContract = new ethers.Contract(
+                ehrAddress,
+                EHR_NFTConfig.abi,
+                signer
+            );
+    
+            const accessContract = new ethers.Contract(
+                accessAddress,
+                PatientDoctorAccessControllerConfig.abi,
+                signer
+            );
+    
+    
+            // Verify doctor has permission to update this patient's record
+            const hasAccess = await accessContract.hasAccess(patientAddress, signerAddress);
+    
             if (!hasAccess) {
                 throw new Error("Access denied to update this record.");
             }
-
+    
+            // Upload updated data and metadata to IPFS
             const { dataURI, metadataURI } = await uploadUpdatedRecord();
-
-            await ehrContract.updateDataURI(tokenId, dataURI);
-            await ehrContract.setMetadataURI(tokenId, metadataURI);
-
-            setFormData({ ...formData, notes: "" });
+    
+            // Send on-chain updates
+            const tx1 = await ehrContract.updateDataURI(tokenId, dataURI);
+            await tx1.wait();
+    
+            const tx2 = await ehrContract.setMetadataURI(tokenId, metadataURI);
+            await tx2.wait();
+    
+            // Clear notes and trigger refresh
+            setFormData((prev) => ({ ...prev, notes: "" }));
             onRecordUpdated?.();
         } catch (err) {
             console.error(err);

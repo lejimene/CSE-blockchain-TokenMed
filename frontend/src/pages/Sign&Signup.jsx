@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import "../styles/pages/Signup&Signin.css";
 import KeyShow from "../components/KeyShow";
 
+import { getProvider, getSigner } from "../web3Provider";
+
 // Define role constants for better readability
 const ROLES = {
   UNREGISTERED: 0,
@@ -83,6 +85,7 @@ export async function generateAESKey() {
   return await window.crypto.subtle.exportKey("jwk", key);
 }
 
+
 const Dashboard = () => {
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -99,32 +102,34 @@ const Dashboard = () => {
   useEffect(() => {
     const checkRegistration = async () => {
       if (!account) return;
-      
       setIsLoading(true);
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const contract = new ethers.Contract(userRegistryAddress, userRegistryABI, provider);
-        
+        const provider = getProvider();
+        const network = await provider.getNetwork();
+        const contractAddress = userRegistryConfig[Number(network.chainId)]?.address;
+        const contractABI = userRegistryConfig.abi;
+    
+        if (!contractAddress) {
+          throw new Error(`No contract deployed for chain ID ${network.chainId}`);
+        }
+    
+        const contract = new ethers.Contract(contractAddress, contractABI, provider); // ✔️ provider only
+    
         const role = await contract.getRole(account);
         const roleNumber = parseInt(role.toString(), 10);
-        console.log("Confirmed role on-chain:", roleNumber.toString());
-        
+    
         if ([ROLES.UNREGISTERED, ROLES.PATIENT, ROLES.DOCTOR].includes(roleNumber)) {
           setUserRole(roleNumber);
-          
+    
           const storedKeys = localStorage.getItem(`keys_${account}`);
           if (storedKeys) {
             const { publicKey: storedPublicKey } = JSON.parse(storedKeys);
             setPublicKey(storedPublicKey);
           }
-        } else {
-          console.warn("Unknown role value received:", roleNumber);
-          setUserRole(ROLES.UNREGISTERED);
         }
       } catch (error) {
         console.error("Registration check failed:", error);
-        setError("Failed to check registration status. Please try again.");
-        setUserRole(ROLES.UNREGISTERED);
+        setError(`Network error: ${error.message}`);
       } finally {
         setIsLoading(false);
       }
@@ -186,59 +191,52 @@ const Dashboard = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Generate asymmetric ECDH keys
-      const ecdhKeyPair = await generateECDHKeys(); // Directly using your new function
+      const ecdhKeyPair = await generateECDHKeys();
       const pubKeyBytes = await exportPublicKey(ecdhKeyPair.publicKey);
-      
-      // Generate symmetric AES key
       const aesKey = await generateAESKey();
-      
-      // Validate public key before proceeding
+  
       validatePublicKey(pubKeyBytes);
-      
+  
       const publicKeyHex = ethers.hexlify(pubKeyBytes);
   
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(userRegistryAddress, userRegistryABI, signer);
+      const signer = await getSigner();
+      const network = await signer.provider.getNetwork(); // from signer
+      const contractAddress = userRegistryConfig[Number(network.chainId)]?.address;
+      const contractABI = userRegistryConfig.abi;
+  
+      if (!contractAddress) {
+        throw new Error(`No contract deployed for chain ID ${network.chainId}`);
+      }
+  
+      const contract = new ethers.Contract(contractAddress, contractABI, signer); // ✔️ signer for tx
   
       if (role !== ROLES.PATIENT && role !== ROLES.DOCTOR) {
         throw new Error("Invalid role selection");
       }
   
-      // Prepare keys object - now including both asymmetric and symmetric keys
       const keys = {
         role,
-        publicKey: publicKeyHex, // ECDH public key (hex)
-        privateKey: ethers.hexlify(await exportPrivateKey(ecdhKeyPair.privateKey)), // ECDH private key (hex)
-        aesKey: aesKey // AES symmetric key (JWK format)
+        publicKey: publicKeyHex,
+        privateKey: ethers.hexlify(await exportPrivateKey(ecdhKeyPair.privateKey)),
+        aesKey
       };
   
-      // Send registration with public key to blockchain
       const tx = await contract.registerUser(role, ethers.getBytes(publicKeyHex));
       const receipt = await tx.wait();
-      
-      // Verify the role was set correctly
-      const updatedRole = await contract.getRole(account);
+  
+      const updatedRole = await contract.getRole(account); // will succeed as provider fallback
       if (parseInt(updatedRole.toString(), 10) !== role) {
         throw new Error("Role not set correctly on-chain");
       }
   
-      // Store all keys only after successful on-chain registration
       localStorage.setItem(`keys_${account}`, JSON.stringify(keys));
-  
       setUserRole(role);
       setPublicKey(publicKeyHex);
-      
-      // Show key backup modal with all keys
       setKeysToBackup(keys);
       setShowKeyModal(true);
-  
     } catch (error) {
       console.error("Registration error:", error);
-      
       let errorMessage = `Registration failed: ${error.reason || error.message}`;
-      
       if (error.message.includes("Invalid public key length")) {
         errorMessage = "Key generation failed - please try again";
       } else if (error.message.includes("Role not set correctly")) {
@@ -246,7 +244,6 @@ const Dashboard = () => {
       } else if (error.message.includes("user rejected transaction")) {
         errorMessage = "Transaction was cancelled";
       }
-      
       setError(errorMessage);
     } finally {
       setIsLoading(false);

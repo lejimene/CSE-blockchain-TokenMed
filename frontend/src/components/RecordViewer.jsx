@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { ethers } from 'ethers';
 import "../styles/components/RecordViewer.css";
+const IPFS_GATEWAY = import.meta.env.VITE_IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs/';
+import { getProvider, getSigner } from "../web3Provider";
 
 const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState(currentRecord || {});
     const [viewingHistory, setViewingHistory] = useState(null);
     const [error, setError] = useState(null);
+    const [loadingHistory, setLoadingHistory] = useState(false);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -17,8 +20,18 @@ const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
         e.preventDefault();
         setError(null);
         
+        // Basic validation
+        if (!formData.name || !formData.birthDate) {
+            setError('Name and birth date are required');
+            return;
+        }
+        
         try {
-            await onUpdate(formData);
+            await onUpdate({
+                ...formData,
+                // Ensure we always have a timestamp
+                timestamp: new Date().toISOString()
+            });
             setIsEditing(false);
         } catch (error) {
             console.error("Update failed:", error);
@@ -26,10 +39,49 @@ const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
         }
     };
 
+    const loadHistoryVersion = async (uri) => {
+        try {
+            setLoadingHistory(true);
+            setError(null);
+            
+            const formattedUri = uri.startsWith('ipfs://') ? 
+                uri.replace('ipfs://', IPFS_GATEWAY) : 
+                `${IPFS_GATEWAY}${uri}`;
+            
+            const response = await fetch(formattedUri);
+            if (!response.ok) throw new Error('Failed to fetch historical record');
+            
+            const data = await response.json();
+            
+            if (!data.name || !data.birthDate) {
+                throw new Error('Invalid record format');
+            }
+            
+            setViewingHistory({
+                data,
+                timestamp: data.timestamp // Use the timestamp from the record
+            });
+        } catch (error) {
+            console.error("Error loading historical record:", error);
+            setError(error.message || "Failed to load historical version");
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
     const formatDate = (timestamp) => {
         if (!timestamp) return 'Unknown date';
-        const date = new Date(timestamp);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        
+        try {
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                return 'Invalid date format';
+            }
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } catch (e) {
+            console.error("Date formatting error:", e);
+            return 'Date unavailable';
+        }
     };
 
     return (
@@ -185,29 +237,20 @@ const RecordViewer = ({ currentRecord, history, onUpdate, loading }) => {
             )}
 
             {history.length > 0 && !isEditing && !viewingHistory && (
-                <div className="version-history">
-                    <h3>Version History</h3>
-                    <ul>
-                    {[...history].map((uri, index) => (
-                        <li key={index}>
-                            <button className="version-button" onClick={async () => {
-                                try {
-                                    const response = await fetch(uri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/'));
-                                    if (!response.ok) throw new Error('Failed to fetch historical record');
-                                    const data = await response.json();
-                                    setViewingHistory({
-                                        data,
-                                        timestamp: data.timestamp || uri.split('/').pop()
-                                    });
-                                } catch (error) {
-                                    console.error("Error loading historical record:", error);
-                                    setError("Failed to load historical version");
-                                }
-                            }}>
-                                Version {index + 1} - {formatDate(uri.split('/').pop())}
-                            </button>
-                        </li>
-                    ))}
+                    <div className="version-history">
+                        <h3>Version History</h3>
+                        <ul>
+                            {history.map((uri, index) => (
+                                <li key={index}>
+                                    <button 
+                                        className="version-button" 
+                                        onClick={() => loadHistoryVersion(uri)}
+                                        disabled={loadingHistory}
+                                    >
+                                        Version {history.length - index}
+                                    </button>
+                                </li>
+                            ))}
                     </ul>
                 </div>
             )}

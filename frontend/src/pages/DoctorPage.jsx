@@ -6,6 +6,8 @@ import "../styles/pages/DoctorPage.css";
 import PatientRecordViewer from "../components/PatientRecordViewer";
 import MedicalRecordEditor from "../components/MedicalRecordEditor";
 
+import { getProvider, getSigner } from "../web3Provider";
+
 const ROLES = {
   UNREGISTERED: 0,
   PATIENT: 1,
@@ -25,116 +27,145 @@ const DoctorPage = () => {
     const navigate = useNavigate();
 
     const initializeContracts = useCallback(async (provider, signer) => {
-        const userRegistryContract = new ethers.Contract(
-            userRegistryConfig.address,
-            userRegistryConfig.abi,
-            provider
-        );
-
-        const accessControllerContract = new ethers.Contract(
-            PatientDoctorAccessControllerConfig.address,
-            PatientDoctorAccessControllerConfig.abi,
-            signer || provider
-        );
-
-        const ehrContract = new ethers.Contract(
-            EHR_NFTConfig.address,
-            EHR_NFTConfig.abi,
-            signer || provider
-        );
-
-        return { userRegistryContract, accessControllerContract, ehrContract };
-    }, []);
-
-    const fetchPatientRecord = useCallback(async (ehrContract, accessControllerContract, patientAddress) => {
         try {
+          const network = await provider.getNetwork();
+          
+          // Use chainId instead of name for more reliable matching
+          const contractAddresses = {
+            userRegistry: userRegistryConfig[network.chainId]?.address,
+            accessController: PatientDoctorAccessControllerConfig[network.chainId]?.address,
+            ehr: EHR_NFTConfig[network.chainId]?.address
+          };
+          
+          Object.entries(contractAddresses).forEach(([name, address]) => {
+            if (!address || !ethers.isAddress(address)) {
+              throw new Error(`Missing or invalid ${name} address for network ID ${network.chainId}`);
+            }
+          });
+      
+          return {
+            userRegistryContract: new ethers.Contract(
+              contractAddresses.userRegistry,
+              userRegistryConfig.abi,
+              signer || provider
+            ),
+            accessControllerContract: new ethers.Contract(
+              contractAddresses.accessController,
+              PatientDoctorAccessControllerConfig.abi,
+              signer || provider
+            ),
+            ehrContract: new ethers.Contract(
+              contractAddresses.ehr,
+              EHR_NFTConfig.abi,
+              signer || provider
+            )
+          };
+        } catch (error) {
+          console.error("Contract initialization failed:", error);
+          throw new Error(`Failed to initialize contracts: ${error.message}`);
+        }
+      }, []);
+
+      const fetchPatientRecord = useCallback(async (ehrContract, accessControllerContract, patientAddress) => {
+        setLoading(true);
+        setError(null);
+        
+        try {
+          // Verify access if we have a signer
+          if (accessControllerContract.signer) {
+            const hasAccess = await accessControllerContract.hasAccess(
+              patientAddress, 
+              await accessControllerContract.signer.getAddress()
+            );
+            if (!hasAccess) throw new Error("Access to this patient's records has been revoked");
+          }
+      
           const tokenId = await ehrContract.getTokenId(patientAddress);
           if (!tokenId) throw new Error("Patient has no EHR NFT");
           
           setTokenId(tokenId);
           
-          // Get current data URI and history
           const [currentURI, historyURIs] = await Promise.all([
             ehrContract.getCurrentDataURI(tokenId),
             ehrContract.getDataHistory(tokenId)
           ]);
       
-          // Validate and format the URI
-          const formattedUri = currentURI.startsWith('ipfs://') ? 
-            currentURI : 
-            currentURI ? `ipfs://${currentURI}` : null;
-          
-          if (!formattedUri) {
-            throw new Error("Invalid IPFS URI format");
-          }
+          if (!currentURI) throw new Error("No record data available");
       
-          // Fetch record data from IPFS
-          const gatewayUrl = formattedUri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+          const gatewayUrl = currentURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
           const response = await fetch(gatewayUrl);
           
           if (!response.ok) throw new Error('Failed to fetch record data');
           
           const data = await response.json();
           
-          // Validate the data structure
-          if (!data || (typeof data !== 'object')) {
+          if (!data || typeof data !== 'object') {
             throw new Error("Invalid record data format");
           }
       
           setPatientRecord(data);
           setRecordHistory(historyURIs);
-          
-          return true;
         } catch (error) {
           console.error("Error fetching patient record:", error);
-          setError(`Failed to load patient record: ${error.message}`);
-          return false;
+          setError(`Failed to load record: ${error.message}`);
+          setPatientRecord(null);
+        } finally {
+          setLoading(false);
         }
       }, []);
 
-    useEffect(() => {
+      useEffect(() => {
         const checkUserRole = async () => {
+          try {
+            const provider = getProvider();
+            let signer;
+            let address = account;
+      
             try {
-                const { ethereum } = window;
-                if (!ethereum?.isMetaMask) {
-                    alert("Please install MetaMask!");
-                    return navigate("/");
-                }
-
-                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-                if (!accounts.length) return navigate("/");
-                setAccount(accounts[0]);
-
-                const provider = new ethers.BrowserProvider(ethereum);
-                const signer = await provider.getSigner();
-                const { userRegistryContract } = await initializeContracts(provider, signer);
-
-                const role = await userRegistryContract.getRole(accounts[0]);
-                const roleNumber = role.toNumber ? role.toNumber() : Number(role);
-
-                if (roleNumber !== ROLES.DOCTOR) {
-                    alert("Only doctors can access this page");
-                    return navigate("/");
-                }
-
-                await fetchActivePatients(provider, signer);
-            } catch (error) {
-                console.error("Initialization error:", error);
-                setError("Failed to initialize doctor dashboard");
-            } finally {
-                setIsCheckingRole(false);
+              signer = await getSigner();
+              address = await signer.getAddress();
+              setAccount(address);
+            } catch (signerError) {
+              if (!address) {
+                throw new Error("Wallet connection required");
+              }
+              // Continue in read-only mode
             }
+      
+            const { userRegistryContract } = await initializeContracts(provider, signer);
+            const role = await userRegistryContract.getRole(address);
+            const roleNumber = role.toNumber ? role.toNumber() : Number(role);
+      
+            if (roleNumber !== ROLES.DOCTOR) {
+              return navigate("/");
+            }
+      
+            if (signer) {
+              await fetchActivePatients(provider, signer);
+            }
+          } catch (error) {
+            console.error("Initialization error:", error);
+            setError(error.message.includes("Wallet connection required")
+              ? "Please connect your wallet"
+              : "Failed to initialize dashboard");
+          } finally {
+            setIsCheckingRole(false);
+          }
         };
-
+      
         checkUserRole();
-    }, [navigate, initializeContracts]);
+      }, [navigate, account]);
 
     const revokeAccess = async (patientAddress) => {
+        if (!window.ethereum) {
+            setError("MetaMask required for this action");
+            return;
+        }
         setLoading(true);
         setError(null);
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner(); // Required for this action
             const { accessControllerContract } = await initializeContracts(provider, signer);
 
             const tx = await accessControllerContract.revokeAccess(patientAddress);
@@ -157,11 +188,15 @@ const DoctorPage = () => {
 
     const fetchActivePatients = async (provider, signer) => {
         setLoading(true);
+        provider = getProvider();
+        signer = await getSigner(); // This will throw in Infura-only mode
         try {
             if (!provider || !signer) {
-                const { ethereum } = window;
-                provider = new ethers.BrowserProvider(ethereum);
-                signer = await provider.getSigner();
+                if (!window.ethereum) {
+                    throw new Error("Wallet connection required");
+                }
+                 provider = getProvider();
+                 signer = await getSigner(); // Required for this action
             }
             
             const { accessControllerContract } = await initializeContracts(provider, signer);
@@ -175,13 +210,12 @@ const DoctorPage = () => {
             setLoading(false);
         }
     };
-
     const handleSelectPatient = async (patientAddress) => {
         setLoading(true);
         setError(null);
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner(); // Required for this action
             const { ehrContract, accessControllerContract } = await initializeContracts(provider, signer);
             
             // Verify access first
@@ -202,8 +236,8 @@ const DoctorPage = () => {
     const refreshPatientList = async () => {
         setLoading(true);
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            const provider = getProvider();
+            const signer = await getSigner(); // Required for this action
             await fetchActivePatients(provider, signer);
         } catch (error) {
             console.error("Refresh failed:", error);
