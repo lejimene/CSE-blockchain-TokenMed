@@ -54,9 +54,10 @@ Prequeistet
 - Infura API key (for Ethereum node access)
 
 How to run it after doing all that
-1. npm install in root folder
+1. In root folder npm install
 2. cd frontend 
     - npm install
+    - cd ..
 3. cd server
     - npm install
 
@@ -64,9 +65,9 @@ How to run it after doing all that
 You will need four terminals you will have to run after getting dependecies for everything
 terminal 1 (in root folder)- npx hardhat node 
 terminal 2 (in root folder)- npx hardhat run scripts/deploy.js --network localhost  
-terminal 3 - cd frontend 
+terminal 3 (in root folder) - cd frontend 
             -Then npm run dev
-Terminal 4 - cd server
+Terminal 4 (in root folder) - cd server
             -Then node server.js
 
 And to be certain you have the correct ABI and contract address after run scripts you should see in terminal the contract address and you can edit the 
